@@ -27,7 +27,8 @@ public class SecurityConfig {
         return http
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/login/*", "/auth/*", "/api/*", "/profile", "/oauth2/*", "/error")
+                        // Permit default landing page and auth endpoints
+                        .requestMatchers("/", "/login/**", "/auth/**", "/oauth2/**", "/error", "/profile", "/debug/*")
                         .permitAll()
                         .anyRequest().authenticated())
                 .userDetailsService(userDetailsService)
@@ -35,7 +36,6 @@ public class SecurityConfig {
                 .logout(withDefaults())
                 .addFilterBefore(jwtAuth, UsernamePasswordAuthenticationFilter.class)
                 .build();
-
     }
 
     @Bean

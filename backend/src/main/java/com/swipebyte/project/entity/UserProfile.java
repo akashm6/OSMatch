@@ -18,5 +18,4 @@ public class UserProfile {
     @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "user_id")
     private UserEntity user;
-
 }

@@ -1,28 +1,68 @@
 package com.swipebyte.project.controllers;
 
+import com.swipebyte.project.repository.ProjectRepository;
+import com.swipebyte.project.repository.UserRepository;
+
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+
+import com.swipebyte.project.dto.SwipeDto;
+import com.swipebyte.project.entity.Project;
+
+import java.beans.Transient;
+import com.swipebyte.project.entity.UserEntity;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.RequestBody;
 
 @RestController
 public class SwipeController {
 
+    @Autowired
+    private ProjectRepository projectRepo;
+
+    @Autowired
+    private UserRepository userRepo;
+
     // User swipes left, we remove restaurant from redis cache, increment swipe
     // count, and hand to model
     @PostMapping("/swipeLeft")
-    public ResponseEntity<?> swipeLeft() {
+    public ResponseEntity<?> recordLeftSwipe() {
 
         return null;
 
     }
 
-    @PostMapping("/swipeRight")
-    // user swipes right, restaurant is saved in repo, removed from redis cache,
-    // increment swipe count,
-    // add to userprofile, and hand to model
-    public ResponseEntity<?> swipeRight() {
+    @PostMapping("/swipeRight/")
+    public ResponseEntity<?> recordRightSwipe(@RequestBody SwipeDto swipeDto) {
+        // return ResponseEntity.ok("This is the id the dto is getting: " +
+        // swipeDto.getUserId());
 
-        return null;
+        Project p = swipeDto.getProject();
+        if (projectRepo.existsByUrl(p.getUrl())) {
+            return ResponseEntity.ok("Project already saved. Swipe recorded.");
+        }
+        String bodyText = p.getBodyText();
+        String description = p.getDescription();
+        if (bodyText.length() > 255) {
+            p.setBodyText(bodyText.substring(0, 254));
+        }
+
+        if (description.length() > 255) {
+
+            p.setDescription(description.substring(0, 254));
+        }
+
+        UserEntity user = userRepo.findById(swipeDto.getUserId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "User not found."));
+
+        p.setUser(user);
+        projectRepo.save(p);
+
+        return ResponseEntity.ok("Project now saved to database.");
 
     }
 

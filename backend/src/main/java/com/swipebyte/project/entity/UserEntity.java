@@ -24,8 +24,7 @@ public class UserEntity {
     @JoinColumn(name = "profile_id")
     private UserProfile profile;
 
-    @ManyToMany
-    @JoinTable(name = "swiped_right", joinColumns = @JoinColumn(name = "user_id"), inverseJoinColumns = @JoinColumn(name = "project_id"))
+    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<Project> swipedRightProjects;
 
     private String username;

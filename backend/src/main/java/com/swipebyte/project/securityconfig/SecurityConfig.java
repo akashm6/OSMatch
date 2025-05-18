@@ -28,7 +28,8 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
                         // Permit default landing page and auth endpoints
-                        .requestMatchers("/", "/login/**", "/auth/**", "/oauth2/**", "/error", "/profile", "/debug/*")
+                        .requestMatchers("/", "/login/**", "/auth/**", "/oauth2/**", "/error", "/profile", "/debug/*",
+                                "swipeRight/")
                         .permitAll()
                         .anyRequest().authenticated())
                 .userDetailsService(userDetailsService)

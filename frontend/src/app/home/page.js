@@ -5,7 +5,7 @@ import ProjectCard from "../components/ProjectCard";
 
 const Home = () => {
   const router = useRouter();
-  const [userId, setUserId] = useState(null);
+  const [currentUserId, setUserId] = useState(null);
   const [projects, setProjects] = useState([]); 
   const [currentProjectIndex, setCurrentProjectIndex] = useState(0);
   const [selectedLanguage, setSelectedLanguage] = useState("r");
@@ -14,15 +14,37 @@ const Home = () => {
     const storedUserId = localStorage.getItem("userId");
     if (storedUserId) {
       setUserId(storedUserId);
+      console.log(storedUserId);
       fetchRecommendations(storedUserId);
     } else {
       router.push("/auth/login");
     }
   }, [router]);
-
-  const fetchRecommendations = async (userId) => {
+  
+  const saveSwipeData = async (direction) => {
     try {
-      const res = await fetch(`http://localhost:8000/recommendations/?user_id=${userId}`);
+      const project = projects[currentProjectIndex];
+      const payload = {
+        userId: Number(currentUserId),
+        project,
+        direction,
+      };
+      const response = await fetch("http://localhost:8080/swipeRight/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      });
+      const data = await response.text();
+      console.log(data);
+    }
+    catch(error) {
+      console.log(error);
+    }
+  }
+
+  const fetchRecommendations = async (currentUserId) => {
+    try {
+      const res = await fetch(`http://localhost:8000/recommendations/?user_id=${currentUserId}`);
       const data = await res.json();
       if (data.recommended_repos && Array.isArray(data.recommended_repos)) {
         setProjects(data.recommended_repos);
@@ -36,16 +58,16 @@ const Home = () => {
   };
 
   const handleSwipe = async (direction) => {
-    if (!userId || projects.length === 0) return;
+    if (!currentUserId || projects.length === 0) return;
     const project = projects[currentProjectIndex];
     const payload = {
-      user_id: Number(userId),
+      user_id: Number(currentUserId),
       project,
       direction,
     };
 
-    console.log("Sending swipe payload:", payload);
 
+    console.log("Sending swipe payload:", payload);
     try {
       const res = await fetch("http://localhost:8000/swipe/", {
         method: "POST",
@@ -59,27 +81,31 @@ const Home = () => {
       if (nextIndex < projects.length) {
         setCurrentProjectIndex(nextIndex);
       } else {
-        fetchRecommendations(userId);
+        fetchRecommendations(currentUserId);
       }
     } catch (error) {
       console.error("Error swiping:", error);
+    }
+
+    if(direction == "right") {
+      saveSwipeData(direction);
     }
   };
 
   const handleLanguageChange = async (e) => {
     const newLanguage = e.target.value;
     setSelectedLanguage(newLanguage);
-    if (userId) {
+    if (currentUserId) {
       try {
         await fetch("http://localhost:8000/reset/", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: Number(userId), language: newLanguage }),
+          body: JSON.stringify({ user_id: Number(currentUserId), language: newLanguage }),
         });
       } catch (error) {
         console.error("Error resetting model:", error);
       }
-      fetchRecommendations(userId);
+      fetchRecommendations(currentUserId);
     }
   };
 

@@ -1,21 +1,22 @@
-from fastapi import FastAPI, HTTPException
-import redis
-import json
-import requests
-import random
-import numpy as np
-from typing import Optional
-
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import pandas as pd
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from typing import Optional
+import numpy as np
+import requests
+import random
+import redis
+import json
 import os
 
+# sets up FastAPI environment and loads .env
 app = FastAPI()
+load_dotenv()
 
+# allows the frontend on :3000 to send requests back to the backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -24,15 +25,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# connect to a local Redis instance
 redis_client = redis.Redis(host="localhost", port=6379, decode_responses=True)
 
 GITHUB_API_URL = "https://api.github.com/graphql"
 GITHUB_TOKEN = os.getenv('GITHUB_PERSONAL_ACC_TOKEN')
 
-def get_graphql_query(language: str):
+# defines a new graphql query based on the selected language
+def get_graphql_query(language: str, number: int = 10):
+
+    # searches for open issues labeled "help wanted", grab only first 10 to avoid flooding
+    # on the returned Connection object, narrow on Issues and get the necessary fields
     query = f"""
     {{
-      search(query: "language:{language} state:open label:\\"help wanted\\"", type: ISSUE, first: 10) {{
+      search(query: "language:{language} state:open label:\\"help wanted\\"", type: ISSUE, first: {number}) {{ 
         edges {{
           node {{
             ... on Issue {{
@@ -75,16 +81,21 @@ def get_graphql_query(language: str):
     """
     return query
 
+# Pydantic model for a ResetRequest, used to indicate the user and the language to be wiped
 class ResetRequest(BaseModel):
     user_id: int
     language: str
 
+# reset the user's swipe history and wipe their Redis cache
 @app.post("/reset/")
 async def reset_model(reset: ResetRequest):
+    # delete the swipes for this userid
     redis_client.delete(f"user:{reset.user_id}:swipes")
+    # set the new language for the userid
     redis_client.set(f"user:{reset.user_id}:language", reset.language)
     return {"message": f"Model reset for language {reset.language}"}
 
+# Project model
 class Project(BaseModel):
     title: str
     url: str
@@ -100,41 +111,59 @@ class Project(BaseModel):
     watchers: Optional[int] = 0
     topics: list[str]
 
+# SwipeRequest, defines a user Swipe
 class SwipeRequest(BaseModel):
     user_id: int
     project: Project
     direction: str
 
+# Appends a swipe to the Redis cache
 @app.post("/swipe/")
 async def record_swipe(swipe: SwipeRequest):
     if swipe.direction not in ["left", "right"]:
         raise HTTPException(status_code=400, detail="Invalid swipe direction")
     
     print("Received swipe:", swipe)
-    
-    result = redis_client.rpush(
+
+    curr_len = redis_client.llen(f"user:{swipe.user_id}:swipes")
+
+    new_len = redis_client.rpush(
         f"user:{swipe.user_id}:swipes",
         json.dumps({"direction": swipe.direction, "project": swipe.project.dict()})
     )
-    print(f"Appended swipe for user {swipe.user_id}. Redis rpush result (list length):", result)
+
+    # if we stay at the same length after pushing, something went wrong
+    if(curr_len == new_len):
+        raise Exception("Swipe didn't correctly append to cache.")
     
+    print(f"Appended swipe for user {swipe.user_id}. Redis rpush result (list length):", new_len)
+    
+    # current debug, will remove later
     current_swipes = redis_client.lrange(f"user:{swipe.user_id}:swipes", 0, -1)
     print(f"Current swipe list for user {swipe.user_id}:", current_swipes)
     
     return {"message": "Swipe recorded"}
 
-def fetch_default_projects(language: str):
-    query = get_graphql_query(language)
+
+# calls the github api with the graphql query, and returns response
+# also acts as fallback
+def fetch_default_projects(language: str, initial: bool):
+    if initial:
+        query = get_graphql_query(language)
+    else:
+        query = get_graphql_query(language, number=15)
     headers = {
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Content-Type": "application/json"
     }
+    # call the github api with our graphql query
     response = requests.post(GITHUB_API_URL, json={"query": query}, headers=headers)
     if response.status_code != 200:
         print("Error fetching projects from GitHub:", response.text)
         return []
     data = response.json()
     projects = []
+    # grab all projects from query result
     try:
         edges = data.get("data", {}).get("search", {}).get("edges", [])
         for edge in edges:
@@ -175,10 +204,13 @@ def fetch_default_projects(language: str):
         print("Error processing GitHub data:", e)
     return projects
 
+
 def train_model(user_id):
+    # grab all of our current swipes from redis cache, both left and right
     swipe_data = redis_client.lrange(f"user:{user_id}:swipes", 0, -1)
     print("Swipe list for user", user_id, ":", swipe_data)
     
+    # adjust every 10 swipes
     if len(swipe_data) < 10:
         print("Not enough swipe data for ML training.")
         return []
@@ -192,6 +224,7 @@ def train_model(user_id):
             data = json.loads(val)
             project = data.get("project", {})
             direction = data.get("direction", "left")
+            # grab all of our text for the TF-IDF
             text = (
                 f"{project.get('title', '')} "
                 f"{project.get('primaryLanguage', '')} "
@@ -211,19 +244,25 @@ def train_model(user_id):
         return []
     
     vectorizer = TfidfVectorizer(stop_words="english")
+    # take the text and turn it into a TF-IDF matrix
+    # TF-IDF = importance of word in this project relative to other projects
     tfidf_matrix = vectorizer.fit_transform(records)
     print("TF-IDF matrix shape:", tfidf_matrix.shape)
     
+    # grab the indices of the projects where user swiped right
     liked_indices = [i for i, d in enumerate(directions) if d == 1]
     print("Liked indices:", liked_indices)
     if not liked_indices:
         print("No liked swipes found.")
         return []
     
+    # grab mean scores of swiped right projects
     liked_mean = tfidf_matrix[liked_indices].mean(axis=0)
     liked_mean = np.asarray(liked_mean)
     
-    candidate_projects = fetch_default_projects(redis_client.get(f"user:{user_id}:language") or "r")
+    # grabs a batch of new projects
+    candidate_projects = fetch_default_projects(redis_client.get(f"user:{user_id}:language") or "r", initial = False)
+    # grab all the user's currently swiped projects to remove any duplicates from new batch
     stored_swipes = redis_client.lrange(f"user:{user_id}:swipes", 0, -1)
     swiped_urls = set()
     for val in stored_swipes:
@@ -242,6 +281,7 @@ def train_model(user_id):
         candidate_projects_filtered = candidate_projects
     
     candidate_texts = []
+    # turn each of the candidate projects into a single string 
     for proj in candidate_projects_filtered:
         text = (
             f"{proj.get('title', '')} "
@@ -256,30 +296,36 @@ def train_model(user_id):
         candidate_texts.append(text)
     
     candidate_tfidf = vectorizer.transform(candidate_texts)
+    # get cosine similarity between average liked project and each candidate
     candidate_similarity = cosine_similarity(liked_mean, candidate_tfidf)
     
+
     star_counts = np.array([proj.get("stargazerCount", 0) for proj in candidate_projects_filtered])
+    # grab the max number of stars out of the candidate projects for normanlization
     max_star = star_counts.max() if star_counts.max() > 0 else 1
-    alpha = 0.5
+    # projects with more stars will have their similarity scores boosted up to 60%
+    alpha = 0.6
     adjusted_similarity = candidate_similarity.copy()
+    
     for i in range(candidate_similarity.shape[1]):
         norm_star = star_counts[i] / max_star
         adjusted_similarity[0, i] = candidate_similarity[0, i] * (1 + alpha * norm_star)
     
     sorted_indices = adjusted_similarity.argsort()[0][::-1]
+    # return the 10 highest scoring projects based on similarity scores
     recommendations = [candidate_projects_filtered[i] for i in sorted_indices][:10]
-    print("ML-based recommendations:", recommendations)
+    #print("ML-based recommendations:", recommendations)
     return recommendations
 
+# grabs new recommended projects
 @app.get("/recommendations/")
 async def get_recommendations(user_id: int):
     language = redis_client.get(f"user:{user_id}:language") or "r"
-    print("Using language:", language)
-    print("GraphQL Query:", get_graphql_query(language))
     
     stored_swipes = redis_client.lrange(f"user:{user_id}:swipes", 0, -1)
+    # in the event of a language change or initial bootup
     if len(stored_swipes) < 10:
-        default_projects = fetch_default_projects(language)
+        default_projects = fetch_default_projects(language, initial = True)
         if not default_projects:
             return {"message": "No projects found. Try swiping more!"}
         swiped_urls = set()
@@ -296,13 +342,14 @@ async def get_recommendations(user_id: int):
         random.shuffle(filtered_projects)
         print("Fallback recommendations:", filtered_projects if filtered_projects else default_projects)
         return {"recommended_repos": filtered_projects if filtered_projects else default_projects}
-    
+    # otherwise, we can train the model
     recommendations = train_model(user_id)
     if not recommendations:
         return {"message": "Not enough data, swipe more to get recommendations!"}
     
     return {"recommended_repos": recommendations}
 
+# debug stuff
 @app.get("/debug/swipes/")
 async def debug_swipes(user_id: int):
     swipe_data = redis_client.lrange(f"user:{user_id}:swipes", 0, -1)

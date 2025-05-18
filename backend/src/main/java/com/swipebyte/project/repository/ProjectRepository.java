@@ -8,5 +8,7 @@ import com.swipebyte.project.entity.Project;
 
 @Repository
 public interface ProjectRepository extends JpaRepository<Project, Long> {
-    List<Project> findByTitle(String Title);
+    List<Project> findByUrl(String url);
+
+    boolean existsByUrl(String url);
 }

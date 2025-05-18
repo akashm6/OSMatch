@@ -17,14 +17,31 @@ public class Project {
 
     private String url;
 
-    private String last_updated;
+    private String updatedAt;
+
+    @Column(name = "body_text", columnDefinition = "LONGTEXT")
+    private String bodyText;
+
+    private String repo_url;
 
     private String primaryLanguage;
 
+    private String description;
+
+    private Integer watchers;
+
     private Integer stargazerCount;
+
+    private String forkCount;
 
     @ElementCollection
     private List<String> topics;
 
-    private String issuingUser;
+    @ElementCollection
+    private List<String> labels;
+
+    @ManyToOne
+    @JoinColumn(name = "user_id")
+    private UserEntity user;
+
 }

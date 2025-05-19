@@ -1,7 +1,6 @@
 package com.swipebyte.project.dto;
 
 import lombok.*;
-import java.util.*;
 
 @Getter
 @Setter

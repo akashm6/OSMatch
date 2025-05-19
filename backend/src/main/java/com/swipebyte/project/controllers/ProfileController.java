@@ -40,12 +40,15 @@ public class ProfileController {
 
         UserEntity user = userRepo.findById(profile.getUserId()).get();
 
-        UserProfile currProfile = user.getProfile();
+        Long userId = user.getId();
+        // find the profile of the user
+        UserProfile currProfile = profileRepo.findByUser_Id(userId);
 
         if (currProfile == null) {
 
             return ResponseEntity.badRequest().body("Profile not found.");
         }
+        // update the bio and save the new profile
         String currentBio = currProfile.getBio();
         String newBio = profile.getBio();
         if (!newBio.equals(currentBio)) {
@@ -55,7 +58,7 @@ public class ProfileController {
 
         profileRepo.save(currProfile);
 
-        return ResponseEntity.ok("Profile changed!");
+        return ResponseEntity.ok("Profile updated successfully.");
     }
 
 }

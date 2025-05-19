@@ -1,6 +1,10 @@
 package com.swipebyte.project.entity;
 
 import java.util.List;
+
+import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -40,8 +44,11 @@ public class Project {
     @ElementCollection
     private List<String> labels;
 
+    // JsonBackReference -> Won't be serialized to avoid infinite recursion on
+    // project GETs
     @ManyToOne
     @JoinColumn(name = "user_id")
+    @JsonBackReference
     private UserEntity user;
 
 }

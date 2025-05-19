@@ -30,9 +30,6 @@ public class ProfileController {
     @GetMapping("/profile/likedProjects")
     public ResponseEntity<?> getLikedProjects(@RequestParam Long userId) {
 
-        UserEntity user = userRepo.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "user not found from profile"));
-
         List<Project> projects = projectRepo.findByUser(userId);
 
         return ResponseEntity.ok(projects);

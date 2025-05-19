@@ -4,132 +4,133 @@ import { useRouter } from "next/navigation";
 
 export default function SetupProfile() {
 
-    const cuisines = {
-        'afghani': 'Afghani', 'african': 'African', 'newamerican': 'New American', 'tradamerican': 'Traditional American', "arabian": 'Arabian', "argentine": 'Argentine',
-        "armenian": 'Armenian', "australian": 'Australian', "bangladeshi": 'Bangladeshi', "bbq": 'BBQ', "brazilian": 'Brazilian', "breakfast_brunch": "Breakfast/Brunch", 
-        "british": 'British', "buffets": 'Buffets', "burgers": 'Burgers', "cafes": 'Cafes', "cajun": 'Cajun', "caribbean": 'Caribbean', "chicken_wings": 'Chicken Wings',
-        "chinese": 'Chinese', "comfortfood": "Comfort Food", "cuban": "Cuban", "delis": "Delis", "diners": "Diners", "ethiopian": "Ethiopian", "filipino": "Filipino",
-        "french": "French", "german": "German", "gluten_free": "Gluten-Free", "greek": "Greek", "halal": "Halal", "hotpot": "Hot Pot", "indpak": "Indian/Pakistani",
-        "italian": "Italian", "japanese": "Japanese", "ramen": "Ramen", "korean": "Korean", "kosher": "Kosher", "mexican": "Mexican", "pizza": "Pizza", "russian": "Russian",
-        "salad": "Salad", "sandwiches": "Sandwiches", "seafood": "Seafood", "soulfood": "Soul Food", "soup": "Soup", "southern": "Southern", "spanish": "Spanish",
-        "steak": "Steak", "sushi": "Sushi", "tapas": "Tapas", "thai": "Thai", "turkish": "Turkish", "vegan": "Vegan", "vegetarian": "Vegetarian", "vietnamese": "Vietnamese"
-    }
+    const [userId, setuserId] = useState(0);
+    const [currentBio, setCurrentBio] = useState('');
 
-    const userId = localStorage.getItem("userId");
+    // ensure that this occurs outside of SSR 
+    useEffect(() => {
+        const currentBio = localStorage.getItem("bio");
+        const userId = localStorage.getItem("userId");
+        if(currentBio) {
+            setCurrentBio(currentBio);
+        }
+        if(userId) {
+            setuserId(userId);
+        }
+       
+    }, []);
+    
+    const [likedProjects, setLikedProjects] = useState([]);
+    // used for popup when editing profile
+    const [ShowPopup, setShowPopup] = useState(false);
+    const [BioInput, setBioInput] = useState('');
 
-    // favorite cuisines is a string so we split to create an array 
-    const favs = localStorage.getItem("favoritecuisines") || []
-    const currentBio = localStorage.getItem('bio') || '';
-    const currentFavorites = favs.split(',');
-
-
-    // keep our initial data as whatever's persisted in the database already
-    const [formData, setFormData] = useState({
-        'bio': currentBio,
-        'favoriteCuisines': currentFavorites
-    }
-    )
-
-    // set the initial state to be already favorited cuisines, so we can have them already checked
-    const [checkedCuisines, setCheckedCuisines] = useState(currentFavorites);
-
-
-    // ProfileDto requires the userId as well, so we grab it here 
-    const requestData = {
-        ...formData,
-        userId: localStorage.getItem("userId")
-    };
 
     const router = useRouter();
-    const handleRedirect = () => {
-        router.push('/home');
-    }
 
-    const handleBioChange = (e) => {
-        const {name, value} = e.target;
-        setFormData((prev) => ({ ...prev, [name]: value }));
-    }
-    
-    // if we checked a box, we add it, otherwise we filter the array to remove that cuisine
-    const handleCuisineChange = (e) => {
-        const {name, value} = e.target;
-
-        setCheckedCuisines((prev) => {
-
-            const updatedCuisines = e.target.checked ? 
-            [...prev, value] :
-            prev.filter((cuisine) => cuisine !== value);
-
-            setFormData((formData) => ({
-                ...formData,
-                favoriteCuisines: updatedCuisines,
-                }));
-            return updatedCuisines;
-    });
-};
-
-
-    const [message, setMessage] = useState('');
-    const handleSubmit = async (e) => {
-
-        e.preventDefault();
-        // fetch from ProfileController with id, bio, and cuisines
-        try {
-            const response = await fetch('http://localhost:8080/profile', {
-                method: "POST",
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(requestData),
-            })
-
-            if (response.ok) {
-                // profileDB is correctly updated on submit
-                const success = await response.text();
-                setMessage(success);
-            }
-            else {
-                const errorText = await response.text();
-                setMessage(errorText);
-            }
-        }
-        catch (error) {
-            setMessage("An error occurred. Please try again.");   
-
+    // sends post to backend to update bio in DB
+    const handleBioChange = async (e) => {
+       try {
+        const payload = {
+            userId: userId,
+            bio: BioInput,
         };
-        // push to home
-        handleRedirect();
+
+        const res = await fetch(`http://localhost:8080/profile/edit`, {
+
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(payload)
+        });
+        if(res.ok) {
+            setShowPopup(false);
+            setCurrentBio(BioInput);
+            localStorage.setItem("bio", BioInput);
+        }
+
+        else {
+            console.log("Failed to update bio.");
+        }
+
+        const data = await res.text();
+        console.log(data);
+       }
+
+       catch(err) {
+        console.error(err);
+       }
+
+    };
+
+    // grabs a user's liked projects from the DB
+    const grabLikedProjects = async () => {
+        try {
+            console.log(userId);
+            const res = await fetch(`http://localhost:8080/profile/likedProjects?userId=${userId}`);
+            const data = await res.json();
+            setLikedProjects(data);
+        }
+
+        catch(error) {
+            console.log(error);
+        };
         };
         
+        useEffect(() => {
+            if(userId) {
+                grabLikedProjects(userId);
+            }
+        }, [userId])
+        
+        console.log(likedProjects);
+
+
         return (
             <div>
-                <form onSubmit={handleSubmit} style={{ color: "black" }}>
-                    <input
-                        style={{ color: "black" }}
-                        type="text"
-                        name="bio"
-                        placeholder="Bio"
-                        value={formData.bio}
-                        onChange={handleBioChange}
-                    />
-                    {Object.entries(cuisines).map(([key, value]) => (
-                    <div key={key}>
-                        <label style={{color: 'white'}}>
-                            <input
-                                type="checkbox"
-                                value={key}
-                                onChange={handleCuisineChange}
-                                // initially render page with whatever's favorited in the db as already checked
-                                checked={checkedCuisines.includes(key)}
-                            />
-                            {value}
-                        </label>
+                <h1> this is the profile page.</h1>
+                <h2>This is my bio!: {currentBio}</h2>
+                <button onClick={() => setShowPopup(true)}>Edit Profile</button>
+
+                {ShowPopup && (
+                    <div style={modalOverlayStyle}>
+                        <div style={modalContentStyle}>
+                        <h2>Edit Bio</h2>
+                        <textarea
+                            value={BioInput}
+                            onChange={(e) => setBioInput(e.target.value)}
+                            style={{ width: "100%", height: "100px", marginBottom: "10px" }}
+                        />
+                        <div>
+                            <button onClick={handleBioChange}>Save</button>
+                            <button onClick={() => setShowPopup(false)}>Cancel</button>
+                        </div>
+                        </div>
                     </div>
-                ))}
-                    <button type="submit" style={{ color: "white" }}>
-                        Submit
-                    </button>
-                </form>
+                )}
+
             </div>
         );
 }
+
+// will move to a css file later
+const modalOverlayStyle = {
+    position: "fixed",
+    top: 0, left: 0,
+    width: "100vw",
+    height: "100vh",
+    backgroundColor: "rgba(0,0,0,0.5)",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 1000
+  };
+  
+  const modalContentStyle = {
+    backgroundColor: "white",
+    padding: "20px",
+    borderRadius: "8px",
+    width: "400px",
+    maxWidth: "90%"
+  };

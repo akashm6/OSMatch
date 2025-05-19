@@ -11,6 +11,5 @@ public class ProfileDto {
 
     private Long userId;
     private String bio;
-    private List<String> favoriteCuisines;
 
 }

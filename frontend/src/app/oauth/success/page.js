@@ -2,8 +2,6 @@
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
 import React, { useEffect } from "react";
-import { useState } from "react";
-
 
 export default function OAuthSuccessPage() {
     const router = useRouter();

@@ -47,4 +47,6 @@ public class UserEntity {
 
     private String password;
 
+    private Integer isOAuthLogin;
+
 }

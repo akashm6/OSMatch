@@ -10,6 +10,33 @@ const Home = () => {
   const [currentProjectIndex, setCurrentProjectIndex] = useState(0);
   const [selectedLanguage, setSelectedLanguage] = useState("r");
 
+  const checkJWT = async () => {
+    console.log("running checkjwt()...")
+    const token = localStorage.getItem("token");
+    try {
+      const res = await fetch("http://localhost:8080/protected/jwt", {
+        method: "GET",
+        headers: { 
+          "Authorization": `Bearer ${token}`
+        },
+      });
+      if(!res.ok) {
+        console.log("User JWT Expired. Rerouting...")
+        router.push("/");
+        return
+      }
+      const data = await res.text();
+      console.log("this is the data from checkjwt: " + data);
+    }
+    catch(error) {
+      console.error(error);
+    }
+  };
+
+  useEffect(() => {
+    checkJWT();
+  }, []);
+
   useEffect(() => {
     const storedUserId = localStorage.getItem("userId");
     if (storedUserId) {
@@ -109,6 +136,14 @@ const Home = () => {
     }
   };
 
+  const handleLogout = async (e) => {
+    console.log("before clearing, id is: " + localStorage.getItem("userId"));
+    localStorage.clear();
+    console.log("after clearing, id is: " + localStorage.getItem("userId"));
+    router.push("/");
+    console.log("Logout Successful!");
+  }
+
   return (
     <div style={containerStyle}>
       <header style={headerStyle}>
@@ -146,6 +181,12 @@ const Home = () => {
         </button>
         <button onClick={() => handleSwipe("right")} style={swipeButtonStyle}>
           👍 Right
+        </button>
+        <button onClick={() => router.push("profile")} style = {swipeButtonStyle}>
+          Go to Profile
+        </button>
+        <button onClick={() => handleLogout()} style = {swipeButtonStyle}>
+          Logout
         </button>
       </section>
     </div>

@@ -24,22 +24,19 @@ public class JwtAuthentication extends OncePerRequestFilter {
             throws ServletException, IOException {
 
         String userId = null;
-
         // token in format of Authorization Bearer <TOKEN>
-
         String token = request.getHeader("Authorization");
+
         if (token != null && token.startsWith("Bearer")) {
             token = token.substring(7);
             userId = jwtUtility.validateToken(token);
             // attaches userId to request so controllers can access
-            request.setAttribute(userId, token);
+            if (userId != null) {
+                request.setAttribute("userId", userId);
+            }
         }
 
-        // if no token found, continue with the filter chain unauthenticated
-        else {
-            filterChain.doFilter(request, response);
-            return;
-        }
+        filterChain.doFilter(request, response);
 
     }
 

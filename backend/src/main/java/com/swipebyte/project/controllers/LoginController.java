@@ -1,7 +1,9 @@
 package com.swipebyte.project.controllers;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.ResponseEntity;
 import java.util.*;
@@ -35,6 +37,11 @@ public class LoginController {
             return ResponseEntity.badRequest().body(Map.of("message", "This user does not exist."));
         }
 
+        if (user.getIsOAuthLogin() == 1) {
+
+            return ResponseEntity.badRequest().body(Map.of("message", "This email is already registered with OAuth."));
+        }
+
         if (encoder.matches(input_pass, user.getPassword())) {
 
             String token = jwtUtility.generateToken(user.getId().toString());
@@ -49,5 +56,11 @@ public class LoginController {
 
         return ResponseEntity.badRequest()
                 .body(Map.of("message", "Incorrect password."));
+    }
+
+    @PostMapping("auth/login/oauth/success")
+    public ResponseEntity<?> handleGithubLogin(@AuthenticationPrincipal OAuth2User user) {
+        return ResponseEntity.ok(user.getAttributes());
+
     }
 }

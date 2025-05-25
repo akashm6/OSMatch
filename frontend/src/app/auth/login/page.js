@@ -43,22 +43,22 @@ export default function LoginPage() {
     return (
         <div>
             <form onSubmit={handleSubmit}>
-    <input style = {{color: 'black'}}
-        type="text"
-        name="email"
-        placeholder="Email"
-        value={formData.email}
-        onChange={handleChange}
-    />
-    <input style = {{color: 'black'}}
-        type="password"
-        name="password"
-        placeholder="Password"
-        value={formData.password}
-        onChange={handleChange}
-    />
-    <button type="submit">Login</button>
-</form>
+            <input style = {{color: 'black'}}
+                type="text"
+                name="email"
+                placeholder="Email"
+                value={formData.email}
+                onChange={handleChange}
+            />
+            <input style = {{color: 'black'}}
+                type="password"
+                name="password"
+                placeholder="Password"
+                value={formData.password}
+                onChange={handleChange}
+            />
+            <button type="submit">Login</button>
+        </form>
 
             {message && <p>{message}</p>}
         </div>

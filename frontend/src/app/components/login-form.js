@@ -10,6 +10,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useRouter } from "next/navigation"
+import { useState } from "react"
 
 export function LoginForm({
   className,
@@ -17,6 +18,42 @@ export function LoginForm({
 }) {
 
   const router = useRouter();
+
+  const [message, setMessage] = useState('');
+  const [formData, setFormData] = useState({
+          email: "",
+          password: "",
+  });
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = async (e) => {
+      e.preventDefault();
+      console.log("Submitting: ", formData);
+      try {
+          const response = await fetch("http://localhost:8080/auth/login", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(formData),
+          });
+          const data = await response.json(); 
+          if (response.ok) {
+              localStorage.setItem("token", data.token);
+              localStorage.setItem("userId", data.userId);
+              localStorage.setItem('bio', data.bio);
+              setMessage(data.message || "Login Successful!")
+              router.push("/home"); 
+          } else {
+            setMessage(data.message || "Invalid Credentials.")
+          }
+      } catch (error) {
+          setMessage(data.message || "An error has occurred. Try again.")
+          console.error("Error:", error);
+      }
+  };
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
@@ -28,14 +65,17 @@ export function LoginForm({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form>
+          <form onSubmit={handleSubmit}>
             <div className="flex flex-col gap-6">
               <div className="grid gap-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
+                  name="email"
                   type="email"
                   placeholder="m@example.com"
+                  value={formData.email}
+                  onChange={handleChange}
                   required
                 />
               </div>
@@ -49,12 +89,19 @@ export function LoginForm({
                     Forgot your password?
                   </a>
                 </div>
-                <Input id="password" type="password" required />
+                <Input 
+                id="password" 
+                name="password"
+                type="password"
+                value={formData.password}
+                onChange={handleChange} 
+                required 
+                />
               </div>
               <Button type="submit" className="w-full">
                 Login
               </Button>
-              <Button variant="outline" className="w-full">
+              <Button variant="outline" className="w-full" onClick = {() => router.push("http://localhost:8080/oauth2/authorization/google")}>
                 Login with Google
               </Button>
             </div>
@@ -65,6 +112,9 @@ export function LoginForm({
               </a>
             </div>
           </form>
+          {message && (
+            <p className="text-sm text-center text-green-600 mt-4">{message}</p>
+          )}
         </CardContent>
       </Card>
     </div>

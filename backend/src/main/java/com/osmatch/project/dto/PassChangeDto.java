@@ -11,7 +11,8 @@ import lombok.Setter;
 @AllArgsConstructor
 public class PassChangeDto {
 
-    private Long userId;
     private String newPassword;
+    private String confirmedPassword;
+    private String email;
 
 }

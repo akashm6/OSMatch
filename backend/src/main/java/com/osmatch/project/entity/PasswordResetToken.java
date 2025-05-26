@@ -7,10 +7,13 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import java.util.Date;
 import lombok.Setter;
 
 @Getter
 @Setter
+@NoArgsConstructor
 @AllArgsConstructor
 @Entity
 public class PasswordResetToken {
@@ -18,7 +21,9 @@ public class PasswordResetToken {
     @Id
     private String token;
 
-    private LocalDateTime expiryDate;
+    private Date expiryDate;
+
+    private String email;
 
     @ManyToOne
     @JoinColumn(name = "user_id")

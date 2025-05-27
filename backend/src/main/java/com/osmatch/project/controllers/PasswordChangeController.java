@@ -1,30 +1,26 @@
 package com.osmatch.project.controllers;
 
-import java.time.LocalDateTime;
 import java.util.Date;
 import java.util.Map;
 import java.util.UUID;
-
-import org.apache.catalina.connector.Response;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.mail.MailSender;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.server.ResponseStatusException;
-
 import com.osmatch.project.dto.PassChangeDto;
 import com.osmatch.project.entity.PasswordResetToken;
 import com.osmatch.project.entity.UserEntity;
 import com.osmatch.project.repository.PasswordResetTokenRepository;
 import com.osmatch.project.repository.UserRepository;
+
+import jakarta.transaction.Transactional;
 
 @RestController
 public class PasswordChangeController {
@@ -41,23 +37,21 @@ public class PasswordChangeController {
     @Autowired
     BCryptPasswordEncoder encoder;
 
+    @Transactional
     @PostMapping("/auth/sendEmail")
     public ResponseEntity<?> sendPasswordEmail(@RequestBody String email) {
         SimpleMailMessage message = new SimpleMailMessage();
-
         message.setTo(email);
         message.setSubject("Reset Password - OSMatch");
-        String redirecturl = "http://localhost:3000/auth/passwordChange";
-        String text = "Forgot your password? No problem. Use this link to reset it!\n\n" + redirecturl
-                + "\n\nThis link will expire in 15 minutes.";
-
-        message.setText(text);
 
         int expirationTime = 900000;
         Date expiration = new Date(System.currentTimeMillis() + expirationTime);
         String token = UUID.randomUUID().toString();
         UserEntity user = userRepo.findByEmail(email);
-
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                    "message", "No user found with that email."));
+        }
         PasswordResetToken passResetToken = new PasswordResetToken();
         passResetToken.setEmail(email);
         passResetToken.setUser(user);
@@ -66,6 +60,11 @@ public class PasswordChangeController {
         passResetToken.setUsed(false);
         passRepo.save(passResetToken);
 
+        String redirecturl = "http://localhost:3000/auth/passwordChange?token=" + token;
+        String text = "Forgot your password? No problem. Use this link to reset it!\n\n" + redirecturl
+                + "\n\nThis link will expire in 15 minutes.";
+
+        message.setText(text);
         mailSender.send(message);
 
         return ResponseEntity.ok(Map.of(
@@ -90,7 +89,6 @@ public class PasswordChangeController {
 
         Date expiryDate = passResetToken.getExpiryDate();
         Date now = new Date();
-
         if (now.compareTo(expiryDate) > 0) {
             return ResponseEntity.badRequest().body(Map.of(
                     "message", "Link Expired. Redirect."));
@@ -104,8 +102,11 @@ public class PasswordChangeController {
                     "message", "Passwords do not match. Try again."));
         }
 
-        UserEntity user = passResetToken.getUser();
+        String email = passResetToken.getEmail();
+        System.out.print("THIS IS THE USERS EMAIL: " + email);
+        UserEntity user = userRepo.findByEmail(email);
         if (user == null) {
+
             return ResponseEntity.badRequest().body(Map.of(
                     "message", "User cannot be found with this token. Redirect."));
         }

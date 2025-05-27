@@ -48,6 +48,22 @@ const Home = () => {
     }
   }, [router]);
   
+  const handlePasswordChange = async (email) => {
+      try {
+        const res = await fetch(`http://localhost:8080/auth/sendEmail`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: email,
+        });
+
+        const data = await res.json();
+        console.log(data);
+      }
+      catch(error) {
+        console.error(error);
+      }  
+  }
+  
   const saveSwipeData = async (direction) => {
     try {
       const project = projects[currentProjectIndex];
@@ -188,6 +204,10 @@ const Home = () => {
         <button onClick={() => handleLogout()} style = {swipeButtonStyle}>
           Logout
         </button>
+        <button onClick={() => handlePasswordChange("practicefile123@gmail.com")} style = {swipeButtonStyle}>
+          changeemail 
+        </button>
+
       </section>
     </div>
   );

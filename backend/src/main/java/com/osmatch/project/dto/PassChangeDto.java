@@ -13,6 +13,5 @@ public class PassChangeDto {
 
     private String newPassword;
     private String confirmedPassword;
-    private String email;
 
 }

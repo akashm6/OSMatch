@@ -1,136 +1,147 @@
 "use client";
-import { useState, React, useEffect } from "react";
+
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
-export default function SetupProfile() {
+export default function ProfilePage() {
+  const [userId, setUserId] = useState(null);
+  const router = useRouter();
+  const [likedProjects, setLikedProjects] = useState([]);
+  const [username, setUsername] = useState('');
+  const [selectedProject, setSelectedProject] = useState(null);
 
-    const [userId, setuserId] = useState(0);
-    const [currentBio, setCurrentBio] = useState('');
-
-    // ensure that this occurs outside of SSR 
-    useEffect(() => {
-        const currentBio = localStorage.getItem("bio");
-        const userId = localStorage.getItem("userId");
-        if(currentBio) {
-            setCurrentBio(currentBio);
-        }
-        if(userId) {
-            setuserId(userId);
-        }
-       
-    }, []);
-    
-    const [likedProjects, setLikedProjects] = useState([]);
-    // used for popup when editing profile
-    const [ShowPopup, setShowPopup] = useState(false);
-    const [BioInput, setBioInput] = useState('');
-
-
-    const router = useRouter();
-
-    // sends post to backend to update bio in DB
-    const handleBioChange = async (e) => {
-       try {
-        const payload = {
-            userId: userId,
-            bio: BioInput,
-        };
-
-        const res = await fetch(`http://localhost:8080/profile/edit`, {
-
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(payload)
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const validateToken = async () => {
+      try {
+        const res = await fetch("http://localhost:8080/protected/jwt", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
         });
-        if(res.ok) {
-            setShowPopup(false);
-            setCurrentBio(BioInput);
-            localStorage.setItem("bio", BioInput);
+
+        if (!res.ok) {
+          router.push("/");
+          return;
         }
 
-        else {
-            console.log("Failed to update bio.");
-        }
-
-        const data = await res.text();
-        console.log(data);
-       }
-
-       catch(err) {
-        console.error(err);
-       }
-
+        const data = await res.json();
+        setUserId(data.userId);
+        setUsername(data.username);
+        fetchLikedProjects(data.userId);
+      } catch (error) {
+        console.error(error);
+      }
     };
+    validateToken();
+  }, []);
 
-    // grabs a user's liked projects from the DB
-    const grabLikedProjects = async () => {
-        try {
-            console.log(userId);
-            const res = await fetch(`http://localhost:8080/profile/likedProjects?userId=${userId}`);
-            const data = await res.json();
-            setLikedProjects(data);
-        }
+  const fetchLikedProjects = async (id) => {
+    try {
+      const res = await fetch(
+        `http://localhost:8080/profile/likedProjects?userId=${id}`
+      );
+      const data = await res.json();
+      console.log(data)
+      setLikedProjects(data);
+    } catch (err) {
+      console.error("Error fetching liked projects:", err);
+    }
+  };
 
-        catch(error) {
-            console.log(error);
-        };
-        };
-        
-        useEffect(() => {
-            if(userId) {
-                grabLikedProjects(userId);
-            }
-        }, [userId])
-        
-        console.log(likedProjects);
+  const groupedByLanguage = likedProjects.reduce((acc, project) => {
+    const lang = project.primaryLanguage || "Unknown";
+    if (!acc[lang]) acc[lang] = [];
+    acc[lang].push(project);
+    return acc;
+  }, {});
 
+  return (
+    <div className="p-6 dark:bg-background">
+      <h1 className="text-3xl font-bold mb-6 text-foreground">{username}'s Liked Projects</h1>
+      {Object.keys(groupedByLanguage).length === 0 ? (
+        <p className="text-muted-foreground">No liked projects yet.</p>
+      ) : (
+        <Accordion type="multiple" className="w-full">
+          {Object.entries(groupedByLanguage).map(([language, projects]) => (
+            <AccordionItem value={language} key={language}>
+              <AccordionTrigger className="text-lg font-semibold text-foreground">
+                {language}
+              </AccordionTrigger>
+              <AccordionContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {projects.map((project, idx) => (
+                  <Card
+                    key={idx}
+                    className="hover:shadow-lg transition cursor-pointer bg-card text-foreground"
+                    onClick={() => setSelectedProject(project)}
+                  >
+                    <CardHeader>
+                      <CardTitle className="truncate">{project.name}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground truncate">
+                        {project.description || "No description"}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </AccordionContent>
+            </AccordionItem>
+          ))}
+        </Accordion>
+      )}
 
-        return (
-            <div>
-                <h1> this is the profile page.</h1>
-                <h2>This is my bio!: {currentBio}</h2>
-                <button onClick={() => setShowPopup(true)}>Edit Profile</button>
-
-                {ShowPopup && (
-                    <div style={modalOverlayStyle}>
-                        <div style={modalContentStyle}>
-                        <h2>Edit Bio</h2>
-                        <textarea
-                            value={BioInput}
-                            onChange={(e) => setBioInput(e.target.value)}
-                            style={{ width: "100%", height: "100px", marginBottom: "10px" }}
-                        />
-                        <div>
-                            <button onClick={handleBioChange}>Save</button>
-                            <button onClick={() => setShowPopup(false)}>Cancel</button>
-                        </div>
-                        </div>
-                    </div>
-                )}
-
-            </div>
-        );
+      <Dialog open={!!selectedProject} onOpenChange={() => setSelectedProject(null)}>
+        <DialogContent className="bg-card text-foreground border-border">
+          <DialogHeader>
+            <DialogTitle>{selectedProject?.name}</DialogTitle>
+            <DialogDescription>{selectedProject?.description}</DialogDescription>
+          </DialogHeader>
+          <div className="mt-4 space-y-2 text-sm">
+            <p>
+              <span className="font-semibold">Repository:</span> {selectedProject?.repo_name}
+            </p>
+            <p>
+              <span className="font-semibold">Language:</span> {selectedProject?.primaryLanguage}
+            </p>
+            <p>
+              <span className="font-semibold">Issue:</span> {selectedProject?.title}
+            </p>
+            <p>
+              <span className="font-semibold">Labels:</span> {selectedProject?.labels?.join(", ") || "No labels available."}
+            </p>
+            <p>
+              <span className="font-semibold">Topics:</span> {selectedProject?.topics?.join(", ") || "No topics available."}
+            </p>
+          </div>
+          <div className="mt-4">
+            <a
+              href={selectedProject?.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block"
+            >
+              <Button className="bg-primary text-black hover:shadow-[0_0_10px_#4f46e5] transition">
+                View Project
+              </Button>
+            </a>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }
-
-// will move to a css file later
-const modalOverlayStyle = {
-    position: "fixed",
-    top: 0, left: 0,
-    width: "100vw",
-    height: "100vh",
-    backgroundColor: "rgba(0,0,0,0.5)",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 1000
-  };
-  
-  const modalContentStyle = {
-    backgroundColor: "white",
-    padding: "20px",
-    borderRadius: "8px",
-    width: "400px",
-    maxWidth: "90%"
-  };

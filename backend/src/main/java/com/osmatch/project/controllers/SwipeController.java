@@ -37,22 +37,21 @@ public class SwipeController {
 
     @PostMapping("/swipeRight/")
     public ResponseEntity<?> recordRightSwipe(@RequestBody SwipeDto swipeDto) {
-        // return ResponseEntity.ok("This is the id the dto is getting: " +
-        // swipeDto.getUserId());
 
         Project p = swipeDto.getProject();
-        if (projectRepo.existsByUrl(p.getUrl())) {
-            return ResponseEntity.ok("Project already saved. Swipe recorded.");
-        }
-        String bodyText = p.getBodyText();
-        String description = p.getDescription();
+        String bodyText = p.getBodyText() != null || p.getBodyText() != "" ? p.getBodyText()
+                : "No Body Text Available.";
+
+        String description = p.getDescription() != null || p.getDescription() != "" ? p.getDescription()
+                : "No Description Available.";
+
         if (bodyText.length() > 255) {
-            p.setBodyText(bodyText.substring(0, 254));
+            p.setBodyText(bodyText.substring(0, 251) + "...");
         }
 
         if (description.length() > 255) {
 
-            p.setDescription(description.substring(0, 254));
+            p.setDescription(description.substring(0, 251) + "...");
         }
 
         UserEntity user = userRepo.findById(swipeDto.getUserId())

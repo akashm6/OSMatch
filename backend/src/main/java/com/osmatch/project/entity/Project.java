@@ -28,6 +28,8 @@ public class Project {
 
     private String repo_url;
 
+    private String repo_name;
+
     private String primaryLanguage;
 
     private String description;

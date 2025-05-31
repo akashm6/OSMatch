@@ -151,7 +151,7 @@ def fetch_default_projects(language: str, initial: bool):
     if initial:
         query = get_graphql_query(language)
     else:
-        query = get_graphql_query(language, number=15)
+        query = get_graphql_query(language, number=50)
     headers = {
         "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Content-Type": "application/json"

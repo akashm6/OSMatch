@@ -1,13 +1,18 @@
 package com.osmatch.project.controllers;
 
+import java.util.Map;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
+import com.osmatch.project.repository.UserRepository;
 import com.osmatch.project.securityconfig.*;
+import com.osmatch.project.entity.*;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -18,6 +23,9 @@ public class JWTController {
     @Autowired
     JwtUtility utility;
 
+    @Autowired
+    UserRepository userRepo;
+
     @GetMapping("/protected/jwt")
     public ResponseEntity<?> validateJWT(HttpServletRequest request) {
 
@@ -27,7 +35,15 @@ public class JWTController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        return ResponseEntity.ok("Data Authorized for User Id: " + userId);
+        Long longUserId = Long.parseLong(userId);
+        UserEntity user = userRepo.findById(longUserId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
+        String username = user.getUsername();
+
+        return ResponseEntity.ok(Map.of(
+                "message", "JWT Validated for User.",
+                "userId", userId,
+                "username", username));
     }
 
 }

@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/ui/app-sidebar";
 
 export default function Home() {
@@ -26,17 +25,35 @@ export default function Home() {
   const [currentUserId, setUserId] = useState(null);
   const [projects, setProjects] = useState([]);
   const [currentProjectIndex, setCurrentProjectIndex] = useState(0);
-  const [selectedLanguage, setSelectedLanguage] = useState('');
+  const [selectedLanguage, setSelectedLanguage] = useState("python");
 
+  // Check token validity
   useEffect(() => {
     const token = localStorage.getItem("token");
-    fetch("http://localhost:8080/protected/jwt", {
-      method: "GET",
-      headers: { Authorization: `Bearer ${token}` },
-    }).then((res) => {
-      if (!res.ok) router.push("/");
-    });
-  }, []);
+    const validateToken = async () => {
+        try {
+            const res = await fetch("http://localhost:8080/protected/jwt", {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if(!res.ok) {
+            router.push('/')
+            return;
+        }
+        else{
+            const data = await res.json();
+            handleLanguageChange("python");
+            setUserId(data.userId);
+            fetchRecommendations(data.userId)
+        }
+    }
+        catch(error) {
+            console.error(error);
+        }
+    }
+    validateToken();
+    }, [router]);
 
   const handleLanguageChange = async (lang) => {
     setSelectedLanguage(lang);
@@ -53,22 +70,10 @@ export default function Home() {
       }
     }
   };
-  
-  useEffect(() => {
-    const storedUserId = localStorage.getItem("userId");
-    if (storedUserId) {
-      setUserId(storedUserId);
-      fetchRecommendations(storedUserId);
-    } else {
-      router.push("/auth/login");
-    }
-  }, [router]);
 
   const fetchRecommendations = async (id) => {
     try {
-      const res = await fetch(
-        `http://localhost:8000/recommendations/?user_id=${id}`
-      );
+      const res = await fetch(`http://localhost:8000/recommendations/?user_id=${id}`);
       const data = await res.json();
       if (Array.isArray(data.recommended_repos)) {
         setProjects(data.recommended_repos);
@@ -84,14 +89,38 @@ export default function Home() {
   const handleSwipe = async (direction) => {
     if (!currentUserId || projects.length === 0) return;
     const project = projects[currentProjectIndex];
-    const payload = { user_id: Number(currentUserId), project, direction };
+    const payload = {
+      user_id: Number(currentUserId),
+      project,
+      direction,
+    };
+
+    console.log("Sending swipe payload:", payload);
 
     try {
-      await fetch("http://localhost:8000/swipe/", {
+      // Send to ML model
+      const res = await fetch("http://localhost:8000/swipe/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      const responseData = await res.json();
+      console.log("Response from swipe:", responseData);
+
+      // Save to DB if right swipe
+      if (direction === "right") {
+        await fetch("http://localhost:8080/swipeRight/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: Number(currentUserId),
+            project,
+            direction,
+          }),
+        });
+      }
+
+      // Advance to next
       const nextIndex = currentProjectIndex + 1;
       if (nextIndex < projects.length) {
         setCurrentProjectIndex(nextIndex);
@@ -108,6 +137,10 @@ export default function Home() {
     router.push("/");
   };
 
+  const goToProfile = () => {
+    router.push("/profile");
+  };
+
   return (
     <SidebarProvider>
       <AppSidebar
@@ -117,10 +150,7 @@ export default function Home() {
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4 dark:border-neutral-800">
           <SidebarTrigger className="-ml-1" />
-          <Separator
-            orientation="vertical"
-            className="mr-2 data-[orientation=vertical]:h-4"
-          />
+          <Separator orientation="vertical" className="mr-2 h-4" />
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem className="hidden md:block">
@@ -134,11 +164,20 @@ export default function Home() {
           </Breadcrumb>
         </header>
 
-        <div className="flex flex-1 flex-col gap-4 p-4 dark:bg-background">
-          <div className="grid auto-rows-min gap-4 md:grid-cols-3">
-            <div className="bg-muted/50 aspect-video rounded-xl" />
-            <div className="bg-muted/50 aspect-video rounded-xl" />
-            <div className="bg-muted/50 aspect-video rounded-xl" />
+        <main className="flex flex-1 flex-col gap-4 p-4 dark:bg-background">
+          <div className="grid grid-cols-3 gap-4 mt-6">
+            <div className="bg-card rounded-lg p-4 shadow-md text-center">
+              <h2 className="text-sm font-semibold text-muted-foreground">Total Projects</h2>
+              <p className="text-xl font-bold text-foreground">238</p>
+            </div>
+            <div className="bg-card rounded-lg p-4 shadow-md text-center">
+              <h2 className="text-sm font-semibold text-muted-foreground">Languages Swiped</h2>
+              <p className="text-xl font-bold text-foreground">12</p>
+            </div>
+            <div className="bg-card rounded-lg p-4 shadow-md text-center">
+              <h2 className="text-sm font-semibold text-muted-foreground">Matches</h2>
+              <p className="text-xl font-bold text-foreground">56</p>
+            </div>
           </div>
 
           <Card>
@@ -154,21 +193,33 @@ export default function Home() {
             </CardContent>
           </Card>
 
-          <div className="flex gap-6">
-            <Button onClick={() => handleSwipe("left")} variant="outline">
-              👎 Left
-            </Button>
-            <Button onClick={() => handleSwipe("right")}>
-              👍 Right
-            </Button>
-            <Button onClick={() => router.push("/profile")} variant="secondary">
+          <div className="mt-6 flex flex-wrap justify-center gap-4">
+            <button
+              onClick={() => handleSwipe("left")}
+              className="px-6 py-2 rounded-lg bg-red-600 text-white font-semibold transition duration-200 hover:shadow-[0_0_10px_#dc2626]"
+            >
+              ⬅ Left
+            </button>
+            <button
+              onClick={() => handleSwipe("right")}
+              className="px-6 py-2 rounded-lg bg-green-600 text-white font-semibold transition duration-200 hover:shadow-[0_0_10px_#16a34a]"
+            >
+              ➡ Right
+            </button>
+            <button
+              onClick={goToProfile}
+              className="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold transition duration-200 hover:shadow-[0_0_10px_#3b82f6]"
+            >
               Profile
-            </Button>
-            <Button variant="destructive" onClick={handleLogout}>
+            </button>
+            <button
+              onClick={handleLogout}
+              className="px-6 py-2 rounded-lg bg-neutral-700 text-white font-semibold transition duration-200 hover:shadow-[0_0_10px_#a3a3a3]"
+            >
               Logout
-            </Button>
+            </button>
           </div>
-        </div>
+        </main>
       </SidebarInset>
     </SidebarProvider>
   );

@@ -49,4 +49,8 @@ public class UserEntity {
 
     private Integer isOAuthLogin;
 
+    private Integer totalSwipes;
+
+    private Integer totalMatches;
+
 }

@@ -234,7 +234,7 @@ def train_model(user_id):
     
     if len(swipe_data) < 25:
         print("[ML] Not enough data to train — need at least 25 swipes")
-        return []
+        return [], 0
     
     records, directions = [], []
     for val in swipe_data:
@@ -260,7 +260,7 @@ def train_model(user_id):
             print("Error parsing swipe data for ML:", e)
     
     if not records:
-        return []
+        return [], 0
 
     vectorizer = TfidfVectorizer(stop_words="english")
     tfidf_matrix = vectorizer.fit_transform(records)
@@ -270,12 +270,12 @@ def train_model(user_id):
     print("[ML] Liked indices:", liked_indices)
     if not liked_indices:
         print("[ML] No liked swipes found.")
-        return []
+        return [], 0
 
     liked_mean = tfidf_matrix[liked_indices].mean(axis=0)
     liked_mean = np.asarray(liked_mean).reshape(1, -1)  
 
-    candidate_projects = fetch_default_projects(redis_client.get(f"user:{user_id}:language") or "r", initial=False)
+    candidate_projects = fetch_default_projects(redis_client.get(f"user:{user_id}:language") or "python", initial=False)
     
     stored_swipes = redis_client.lrange(f"user:{user_id}:swipes", 0, -1)
     swiped_urls = set()
@@ -330,7 +330,7 @@ def train_model(user_id):
     print("[ML] Top 5 URLs:", [candidate_projects_filtered[i]["url"] for i in sorted_indices[:5]])
 
     recommendations = [candidate_projects_filtered[i] for i in sorted_indices][:10]
-    return recommendations
+    return recommendations, len(candidate_projects_filtered) - len(recommendations)
     
 # grabs new recommended projects
 @app.get("/recommendations/")
@@ -358,11 +358,14 @@ async def get_recommendations(user_id: int):
         print("Fallback recommendations:", filtered_projects if filtered_projects else default_projects)
         return {"recommended_repos": filtered_projects if filtered_projects else default_projects}
     # otherwise, we can train the model
-    recommendations = train_model(user_id)
+    recommendations, filtered_count = train_model(user_id)
     if not recommendations:
         return {"message": "Not enough data, swipe more to get recommendations!"}
     
-    return {"recommended_repos": recommendations}
+    return {
+        "recommended_repos": recommendations,
+        "filtered_count": filtered_count
+    }
 
 # debug stuff
 @app.get("/debug/swipes/")

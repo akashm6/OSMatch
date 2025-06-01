@@ -4,6 +4,13 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import ProjectCard from "../components/ProjectCard";
 import {
+  HoverCard,
+  HoverCardTrigger,
+  HoverCardContent,
+} from "@/components/ui/hover-card";
+import { Info } from "lucide-react";
+
+import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbLink,
@@ -25,35 +32,43 @@ export default function Home() {
   const [currentUserId, setUserId] = useState(null);
   const [projects, setProjects] = useState([]);
   const [currentProjectIndex, setCurrentProjectIndex] = useState(0);
-  const [selectedLanguage, setSelectedLanguage] = useState("python");
+  const [selectedLanguage, setSelectedLanguage] = useState("");
+  const [userStats, setUserStats] = useState({
+    totalSwipes: 0,
+    totalMatches: 0,
+  });
+  const [filteredCount, setFilteredCount] = useState(0);
 
-  // Check token validity
+  // Check token validity and also grab the user stats
   useEffect(() => {
     const token = localStorage.getItem("token");
     const validateToken = async () => {
-        try {
-            const res = await fetch("http://localhost:8080/protected/jwt", {
-            method: "GET",
-            headers: { Authorization: `Bearer ${token}` },
+      try {
+        const res = await fetch("http://localhost:8080/protected/jwt", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
         });
 
-        if(!res.ok) {
-            router.push('/')
-            return;
+        if (!res.ok) {
+          router.push("/");
+          return;
+        } else {
+          const data = await res.json();
+          handleLanguageChange("python");
+          setUserId(data.userId);
+          setUserStats({
+            totalSwipes: data.totalSwipes,
+            totalMatches: data.totalMatches,
+          });
+          fetchRecommendations(data.userId);
         }
-        else{
-            const data = await res.json();
-            handleLanguageChange("python");
-            setUserId(data.userId);
-            fetchRecommendations(data.userId)
-        }
-    }
-        catch(error) {
-            console.error(error);
-        }
-    }
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
     validateToken();
-    }, [router]);
+  }, [router]);
 
   const handleLanguageChange = async (lang) => {
     setSelectedLanguage(lang);
@@ -62,7 +77,10 @@ export default function Home() {
         await fetch("http://localhost:8000/reset/", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: Number(currentUserId), language: lang }),
+          body: JSON.stringify({
+            user_id: Number(currentUserId),
+            language: lang,
+          }),
         });
         fetchRecommendations(currentUserId);
       } catch (error) {
@@ -73,11 +91,14 @@ export default function Home() {
 
   const fetchRecommendations = async (id) => {
     try {
-      const res = await fetch(`http://localhost:8000/recommendations/?user_id=${id}`);
+      const res = await fetch(
+        `http://localhost:8000/recommendations/?user_id=${id}`
+      );
       const data = await res.json();
       if (Array.isArray(data.recommended_repos)) {
         setProjects(data.recommended_repos);
         setCurrentProjectIndex(0);
+        setFilteredCount(data.filtered_count || 0);
       } else {
         setProjects([]);
       }
@@ -88,6 +109,17 @@ export default function Home() {
 
   const handleSwipe = async (direction) => {
     if (!currentUserId || projects.length === 0) return;
+    if (direction === "right") {
+      setUserStats({
+        totalMatches: userStats.totalMatches + 1,
+        totalSwipes: userStats.totalSwipes + 1,
+      });
+    } else {
+      setUserStats({
+        totalMatches: userStats.totalMatches,
+        totalSwipes: userStats.totalSwipes + 1,
+      });
+    }
     const project = projects[currentProjectIndex];
     const payload = {
       user_id: Number(currentUserId),
@@ -107,17 +139,21 @@ export default function Home() {
       const responseData = await res.json();
       console.log("Response from swipe:", responseData);
 
-      // Save to DB if right swipe
+      // Send to Java backend to update
       if (direction === "right") {
-        await fetch("http://localhost:8080/swipeRight/", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: Number(currentUserId),
-            project,
-            direction,
-          }),
-        });
+        try {
+          await fetch("http://localhost:8080/swipeRight/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: Number(currentUserId),
+              project,
+              direction,
+            }),
+          });
+        } catch (error) {
+          console.error(error);
+        }
       }
 
       // Advance to next
@@ -132,7 +168,20 @@ export default function Home() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const payload = {
+      ...userStats,
+      userId: Number(currentUserId),
+    };
+    try {
+      const res = await fetch("http://localhost:8080/updateStats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      console.error(error);
+    }
     localStorage.clear();
     router.push("/");
   };
@@ -165,21 +214,50 @@ export default function Home() {
         </header>
 
         <main className="flex flex-1 flex-col gap-4 p-4 dark:bg-background">
-          <div className="grid grid-cols-3 gap-4 mt-6">
-            <div className="bg-card rounded-lg p-4 shadow-md text-center">
-              <h2 className="text-sm font-semibold text-muted-foreground">Total Projects</h2>
-              <p className="text-xl font-bold text-foreground">238</p>
-            </div>
-            <div className="bg-card rounded-lg p-4 shadow-md text-center">
-              <h2 className="text-sm font-semibold text-muted-foreground">Languages Swiped</h2>
-              <p className="text-xl font-bold text-foreground">12</p>
-            </div>
-            <div className="bg-card rounded-lg p-4 shadow-md text-center">
-              <h2 className="text-sm font-semibold text-muted-foreground">Matches</h2>
-              <p className="text-xl font-bold text-foreground">56</p>
-            </div>
-          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+            <Card className="bg-gradient-to-br from-indigo-900/60 to-indigo-700/30 border border-indigo-500 shadow-[0_0_20px_#6366f1] text-white hover:shadow-[0_0_25px_#6366f1]/60 transition">
+              <CardHeader className="text-center">
+                <CardTitle className="text-sm font-semibold tracking-wide text-indigo-200">
+                  Total Swipes
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-center">
+                <p className="text-3xl font-bold">{userStats.totalSwipes}</p>
+              </CardContent>
+            </Card>
 
+            <Card className="bg-gradient-to-br from-purple-900/60 to-purple-700/30 border border-purple-500 shadow-[0_0_20px_#8b5cf6] text-white hover:shadow-[0_0_25px_#8b5cf6]/60 transition">
+              <CardHeader className="text-center">
+                <CardTitle className="text-sm font-semibold tracking-wide text-purple-200">
+                  Total Matches
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-center">
+                <p className="text-3xl font-bold">{userStats.totalMatches}</p>
+              </CardContent>
+            </Card>
+
+            <Card className="relative bg-card rounded-lg p-4 pt-6 shadow-md text-center">
+              <div className="absolute top-2 right-2">
+                <HoverCard>
+                  <HoverCardTrigger asChild>
+                    <Info className="w-4 h-4 text-muted-foreground hover:text-foreground cursor-pointer" />
+                  </HoverCardTrigger>
+                  <HoverCardContent className="w-64 text-sm">
+                    Number of recommended projects filtered out because you've
+                    already swiped on them.
+                  </HoverCardContent>
+                </HoverCard>
+              </div>
+
+              <h2 className="text-sm font-semibold text-muted-foreground">
+                Filtered Projects
+              </h2>
+              <p className="text-3xl pt-5 font-bold">
+                {userStats.filteredCount ?? 0}
+              </p>
+            </Card>
+          </div>
           <Card>
             <CardHeader>
               <CardTitle>Swipe Project</CardTitle>

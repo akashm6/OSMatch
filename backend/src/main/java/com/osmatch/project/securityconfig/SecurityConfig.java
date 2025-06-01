@@ -37,7 +37,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // Permit default landing page and auth endpoints
                         .requestMatchers("/", "/login/**", "/auth/**", "/oauth2/**", "/error", "/profile/*", "/debug/*",
-                                "swipeRight/", "/protected/*")
+                                "swipeRight/", "/protected/*", "/updateStats")
                         .permitAll()
                         .anyRequest().authenticated())
                 .userDetailsService(userDetailsService)

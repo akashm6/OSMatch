@@ -273,7 +273,7 @@ def train_model(user_id):
         return []
 
     liked_mean = tfidf_matrix[liked_indices].mean(axis=0)
-    liked_mean = np.asarray(liked_mean).reshape(1, -1)  # ✅ Fix for np.matrix warning
+    liked_mean = np.asarray(liked_mean).reshape(1, -1)  
 
     candidate_projects = fetch_default_projects(redis_client.get(f"user:{user_id}:language") or "r", initial=False)
     
@@ -295,7 +295,7 @@ def train_model(user_id):
         candidate_projects_filtered = candidate_projects
     else:
         print("CANDIDATE PROJECTS AFTER FILTERING: ", candidate_projects_filtered)
-        
+
     candidate_texts = []
     for proj in candidate_projects_filtered:
         text = (

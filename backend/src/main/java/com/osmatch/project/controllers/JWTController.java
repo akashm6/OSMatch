@@ -39,11 +39,14 @@ public class JWTController {
         UserEntity user = userRepo.findById(longUserId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
         String username = user.getUsername();
-
+        Integer totalSwipes = user.getTotalSwipes();
+        Integer totalMatches = user.getTotalMatches();
         return ResponseEntity.ok(Map.of(
                 "message", "JWT Validated for User.",
                 "userId", userId,
-                "username", username));
+                "username", username,
+                "totalSwipes", totalSwipes,
+                "totalMatches", totalMatches));
     }
 
 }

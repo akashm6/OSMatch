@@ -49,6 +49,8 @@ public class RegisterController {
         user.setEmail(registerDto.getEmail());
         user.setIsOAuthLogin(0);
         user.setSwipedRightProjects(new HashSet<Project>());
+        user.setTotalMatches(0);
+        user.setTotalSwipes(0);
 
         UserProfile newProfile = new UserProfile();
         newProfile.setUser(user);

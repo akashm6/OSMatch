@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from datetime import datetime
 from typing import Optional
 import numpy as np
 import requests
@@ -31,55 +32,21 @@ redis_client = redis.Redis(host="localhost", port=6379, decode_responses=True)
 GITHUB_API_URL = "https://api.github.com/graphql"
 GITHUB_TOKEN = os.getenv('GITHUB_PERSONAL_ACC_TOKEN')
 
-# defines a new graphql query based on the selected language
-def get_graphql_query(language: str, number: int = 10):
-
-    # searches for open issues labeled "help wanted", grab only first 10 to avoid flooding
-    # on the returned Connection object, narrow on Issues and get the necessary fields
-    query = f"""
-    {{
-      search(query: "language:{language} state:open label:\\"help wanted\\"", type: ISSUE, first: {number}) {{ 
-        edges {{
-          node {{
-            ... on Issue {{
-              title
-              url
-              updatedAt
-              bodyText
-              labels(first: 5) {{
-                nodes {{
-                  name
-                }}
-              }}
-              repository {{
-                name
-                url
-                description
-                primaryLanguage {{
-                  name
-                }}
-                stargazers {{
-                  totalCount
-                }}
-                forkCount
-                watchers {{
-                  totalCount
-                }}
-                repositoryTopics(first: 5) {{
-                  nodes {{
-                    topic {{
-                      name
-                    }}
-                  }}
-                }}
-              }}
-            }}
-          }}
-        }}
-      }}
-    }}
-    """
-    return query
+LANGUAGE_KEYWORDS = {
+    "python": ["python", "django", "flask", "jupyter-notebook", "numpy", "scikit-learn", "keras", "pytorch", "tensorflow", "pandas", "machine-learning"],
+    "javascript": ["javascript", "node", "react", "next", "vue", "express", "js", "node.js", "react.js", "next.js", "next"],
+    "java": ["java", "spring", "jvm", "junit4", "junit5", "minecraft", "spring-boot", "spring boot", "spring-security", "javafx"],
+    "sql": ["sql", "postgres", "mysql", "sqlite", "supabase", "pgsql", "database", "db", "databases", "gui-sql", "relational"],
+    "go": ["go", "golang"],
+    "rust": ["rust"],
+    "ruby": ["ruby", "rails"],
+    "c++": ["c++", "cpp"],
+    "c": ["c"],
+    "typescript": ["typescript", "ts"],
+    "swift": ["swift", "ios"],
+    "kotlin": ["kotlin", "android"],
+    "unknown": []
+}
 
 # Pydantic model for a ResetRequest, used to indicate the user and the language to be wiped
 class ResetRequest(BaseModel):
@@ -144,79 +111,132 @@ async def record_swipe(swipe: SwipeRequest):
     
     return {"message": "Swipe recorded"}
 
-
-# calls the github api with the graphql query, and returns response
-# also acts as fallback
-def fetch_default_projects(language: str, initial: bool):
-    if initial:
-        query = get_graphql_query(language)
-    else:
-        query = get_graphql_query(language, number=50)
-    headers = {
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    # call the github api with our graphql query
-    response = requests.post(GITHUB_API_URL, json={"query": query}, headers=headers)
-    if response.status_code != 200:
-        print("Error fetching projects from GitHub:", response.text)
-        return []
-    data = response.json()
-    projects = []
-    # grab all projects from query result
+def is_recent(updated_at_str):
     try:
-        edges = data.get("data", {}).get("search", {}).get("edges", [])
+        updated_at = datetime.strptime(updated_at_str, "%Y-%m-%dT%H:%M:%SZ")
+        return updated_at.year >= 2021
+    except:
+        return False
+
+def infer_language(primary_lang, topics, labels, title):
+    if primary_lang:
+        return primary_lang.lower()
+    combined = [*topics, *labels, title.lower()]
+    for lang, keywords in LANGUAGE_KEYWORDS.items():
+        for keyword in keywords:
+            if any(keyword in item.lower() for item in combined):
+                return lang
+    return "unknown"
+
+def get_graphql_query(language: str, number: int = 100, cursor: Optional[str] = None):
+    after_clause = f', after: "{cursor}"' if cursor else ""
+    return f"""
+    {{
+      search(query: "language:{language} state:open label:\\"help wanted\\" stars:>10 archived:false", type: ISSUE, first: {number}{after_clause}) {{
+        pageInfo {{
+          hasNextPage
+          endCursor
+        }}
+        edges {{
+          node {{
+            ... on Issue {{
+              title
+              url
+              updatedAt
+              bodyText
+              labels(first: 5) {{
+                nodes {{ name }}
+              }}
+              repository {{
+                name
+                url
+                description
+                primaryLanguage {{ name }}
+                stargazers {{ totalCount }}
+                forkCount
+                watchers {{ totalCount }}
+                repositoryTopics(first: 5) {{
+                  nodes {{ topic {{ name }} }}
+                }}
+              }}
+            }}
+          }}
+        }}
+      }}
+    }}
+    """
+
+def parse_project(node):
+    updatedAt = node.get("updatedAt", "")
+    if not is_recent(updatedAt):
+        return None
+    title = node.get("title", "")
+    url = node.get("url", "")
+    bodyText = node.get("bodyText", "")
+    label_nodes = node.get("labels", {}).get("nodes", [])
+    labels = [label.get("name", "") for label in label_nodes]
+    repo = node.get("repository", {})
+    repo_name = repo.get("name", "")
+    repo_url = repo.get("url", "")
+    stargazerCount = repo.get("stargazers", {}).get("totalCount", 0)
+    description = repo.get("description", "")
+    forkCount = repo.get("forkCount", 0)
+    watchers = repo.get("watchers", {}).get("totalCount", 0)
+    topic_nodes = repo.get("repositoryTopics", {}).get("nodes", [])
+    topics = [t.get("topic", {}).get("name", "") for t in topic_nodes]
+    primaryLanguage = repo.get("primaryLanguage", {}).get("name", "")
+    primaryLanguage = infer_language(primaryLanguage, topics, labels, title)
+    return {
+        "title": title,
+        "url": url,
+        "updatedAt": updatedAt,
+        "bodyText": bodyText,
+        "labels": labels,
+        "repo_name": repo_name,
+        "repo_url": repo_url,
+        "primaryLanguage": primaryLanguage,
+        "stargazerCount": stargazerCount,
+        "description": description,
+        "forkCount": forkCount,
+        "watchers": watchers,
+        "topics": topics
+    }
+
+def fetch_default_projects(language: str, initial: bool = True, seen_urls: set = None):
+    projects = []
+    seen_urls = seen_urls or set()
+    cursor = None
+    attempts = 3 if initial else 5
+    while attempts > 0:
+        query = get_graphql_query(language, number=30, cursor=cursor)
+        headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"}
+        response = requests.post(GITHUB_API_URL, json={"query": query}, headers=headers)
+        if response.status_code != 200:
+            print("GitHub API error:", response.text)
+            break
+        data = response.json().get("data", {}).get("search", {})
+        edges = data.get("edges", [])
         for edge in edges:
-            node = edge.get("node", {})
-            title = node.get("title", "")
-            url = node.get("url", "")
-            updatedAt = node.get("updatedAt", "")
-            bodyText = node.get("bodyText", "")
-            label_nodes = node.get("labels", {}).get("nodes", [])
-            labels = [label.get("name", "") for label in label_nodes]
-            repo = node.get("repository", {})
-            repo_name = repo.get("name", "")
-            repo_url = repo.get("url", "")
-            primaryLanguage = repo.get("primaryLanguage", {}).get("name", "")
-            stargazerCount = repo.get("stargazers", {}).get("totalCount", 0)
-            description = repo.get("description", "")
-            forkCount = repo.get("forkCount", 0)
-            watchers = repo.get("watchers", {}).get("totalCount", 0)
-            topic_nodes = repo.get("repositoryTopics", {}).get("nodes", [])
-            topics = [t.get("topic", {}).get("name", "") for t in topic_nodes]
-            project = {
-                "title": title,
-                "url": url,
-                "updatedAt": updatedAt,
-                "bodyText": bodyText,
-                "labels": labels,
-                "repo_name": repo_name,
-                "repo_url": repo_url,
-                "primaryLanguage": primaryLanguage,
-                "stargazerCount": stargazerCount,
-                "description": description,
-                "forkCount": forkCount,
-                "watchers": watchers,
-                "topics": topics
-            }
-            projects.append(project)
-    except Exception as e:
-        print("Error processing GitHub data:", e)
+            proj = parse_project(edge.get("node", {}))
+            if proj and proj["url"] not in seen_urls:
+                projects.append(proj)
+                seen_urls.add(proj["url"])
+        if not data.get("pageInfo", {}).get("hasNextPage"):
+            break
+        cursor = data.get("pageInfo", {}).get("endCursor")
+        attempts -= 1
     return projects
 
 
 def train_model(user_id):
-    # grab all of our current swipes from redis cache, both left and right
     swipe_data = redis_client.lrange(f"user:{user_id}:swipes", 0, -1)
-    print("Swipe list for user", user_id, ":", swipe_data)
+    print(f"[ML] Total swipes: {len(swipe_data)}")
     
-    # adjust every 10 swipes
-    if len(swipe_data) < 10:
-        print("Not enough swipe data for ML training.")
+    if len(swipe_data) < 25:
+        print("[ML] Not enough data to train — need at least 25 swipes")
         return []
     
-    records = []
-    directions = []
+    records, directions = [], []
     for val in swipe_data:
         if not val.strip().startswith("{"):
             continue
@@ -224,13 +244,12 @@ def train_model(user_id):
             data = json.loads(val)
             project = data.get("project", {})
             direction = data.get("direction", "left")
-            # grab all of our text for the TF-IDF
             text = (
                 f"{project.get('title', '')} "
                 f"{project.get('primaryLanguage', '')} "
                 f"{project.get('description', '')} "
                 f"{' '.join(project.get('labels', []))} "
-                f"{' '.join(project.get('topics', []))} "
+                f"{' '.join(project.get('topics', []) )} "
                 f"{project.get('stargazerCount', 0)} "
                 f"{project.get('forkCount', 0)} "
                 f"{project.get('watchers', 0)}"
@@ -242,27 +261,22 @@ def train_model(user_id):
     
     if not records:
         return []
-    
+
     vectorizer = TfidfVectorizer(stop_words="english")
-    # take the text and turn it into a TF-IDF matrix
-    # TF-IDF = importance of word in this project relative to other projects
     tfidf_matrix = vectorizer.fit_transform(records)
-    print("TF-IDF matrix shape:", tfidf_matrix.shape)
-    
-    # grab the indices of the projects where user swiped right
+    print("[ML] TF-IDF matrix shape:", tfidf_matrix.shape)
+
     liked_indices = [i for i, d in enumerate(directions) if d == 1]
-    print("Liked indices:", liked_indices)
+    print("[ML] Liked indices:", liked_indices)
     if not liked_indices:
-        print("No liked swipes found.")
+        print("[ML] No liked swipes found.")
         return []
-    
-    # grab mean scores of swiped right projects
+
     liked_mean = tfidf_matrix[liked_indices].mean(axis=0)
-    liked_mean = np.asarray(liked_mean)
+    liked_mean = np.asarray(liked_mean).reshape(1, -1)  # ✅ Fix for np.matrix warning
+
+    candidate_projects = fetch_default_projects(redis_client.get(f"user:{user_id}:language") or "r", initial=False)
     
-    # grabs a batch of new projects
-    candidate_projects = fetch_default_projects(redis_client.get(f"user:{user_id}:language") or "r", initial = False)
-    # grab all the user's currently swiped projects to remove any duplicates from new batch
     stored_swipes = redis_client.lrange(f"user:{user_id}:swipes", 0, -1)
     swiped_urls = set()
     for val in stored_swipes:
@@ -277,11 +291,12 @@ def train_model(user_id):
     
     candidate_projects_filtered = [proj for proj in candidate_projects if proj["url"] not in swiped_urls]
     if not candidate_projects_filtered:
-        print("No new candidate projects available after filtering. Falling back to default projects.")
+        print("[ML] No new candidates after filtering. Falling back.")
         candidate_projects_filtered = candidate_projects
-    
+    else:
+        print("CANDIDATE PROJECTS AFTER FILTERING: ", candidate_projects_filtered)
+        
     candidate_texts = []
-    # turn each of the candidate projects into a single string 
     for proj in candidate_projects_filtered:
         text = (
             f"{proj.get('title', '')} "
@@ -294,29 +309,29 @@ def train_model(user_id):
             f"{proj.get('watchers', 0)}"
         )
         candidate_texts.append(text)
-    
+
     candidate_tfidf = vectorizer.transform(candidate_texts)
-    # get cosine similarity between average liked project and each candidate
     candidate_similarity = cosine_similarity(liked_mean, candidate_tfidf)
-    
+
+    print("[ML] Top similarity score:", candidate_similarity.max())
+    print("[ML] Nonzero similarities:", np.count_nonzero(candidate_similarity))
 
     star_counts = np.array([proj.get("stargazerCount", 0) for proj in candidate_projects_filtered])
-    # grab the max number of stars out of the candidate projects for normanlization
     max_star = star_counts.max() if star_counts.max() > 0 else 1
-    # projects with more stars will have their similarity scores boosted up to 60%
     alpha = 0.6
     adjusted_similarity = candidate_similarity.copy()
-    
+
     for i in range(candidate_similarity.shape[1]):
         norm_star = star_counts[i] / max_star
         adjusted_similarity[0, i] = candidate_similarity[0, i] * (1 + alpha * norm_star)
-    
-    sorted_indices = adjusted_similarity.argsort()[0][::-1]
-    # return the 10 highest scoring projects based on similarity scores
-    recommendations = [candidate_projects_filtered[i] for i in sorted_indices][:10]
-    #print("ML-based recommendations:", recommendations)
-    return recommendations
 
+    sorted_indices = adjusted_similarity.argsort()[0][::-1]
+    print("[ML] Top 5 scores:", adjusted_similarity[0][sorted_indices[:5]])
+    print("[ML] Top 5 URLs:", [candidate_projects_filtered[i]["url"] for i in sorted_indices[:5]])
+
+    recommendations = [candidate_projects_filtered[i] for i in sorted_indices][:10]
+    return recommendations
+    
 # grabs new recommended projects
 @app.get("/recommendations/")
 async def get_recommendations(user_id: int):

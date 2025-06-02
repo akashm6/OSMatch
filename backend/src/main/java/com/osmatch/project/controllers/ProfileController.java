@@ -1,17 +1,12 @@
 package com.osmatch.project.controllers;
 
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
-
 import com.osmatch.project.dto.*;
 import com.osmatch.project.entity.*;
 import com.osmatch.project.repository.*;
-
 import org.springframework.beans.factory.annotation.*;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import java.util.*;
-
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,15 +22,20 @@ public class ProfileController {
     private ProfileRepository profileRepo;
 
     @Autowired
-    private ProjectRepository projectRepo;
+    private LikedIssueRepository likedRepo;
 
     // Grabs the user's swiped right projects from db to display on profile
     @GetMapping("/profile/likedProjects")
     public ResponseEntity<?> getLikedProjects(@RequestParam Long userId) {
 
-        List<Project> projects = projectRepo.findByUser(userId);
+        List<LikedIssue> liked = likedRepo.findByUser_Id(userId);
+        List<GithubIssue> issues = new ArrayList<>();
 
-        return ResponseEntity.ok(projects);
+        for (LikedIssue l : liked) {
+            issues.add(l.getIssue());
+        }
+
+        return ResponseEntity.ok(issues);
     }
 
     @PostMapping("/profile/edit")

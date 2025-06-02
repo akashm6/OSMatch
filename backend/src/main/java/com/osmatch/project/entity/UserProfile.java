@@ -1,6 +1,5 @@
 package com.osmatch.project.entity;
 
-import java.util.*;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -15,7 +14,6 @@ public class UserProfile {
     private Long id;
 
     private String bio;
-    @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
-    @JoinColumn(name = "user_id")
+    @OneToOne(mappedBy = "profile")
     private UserEntity user;
 }

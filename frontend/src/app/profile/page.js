@@ -35,6 +35,8 @@ export default function ProfilePage() {
         });
 
         if (!res.ok) {
+           console.log(res.json())
+           console.log(res)
           router.push("/");
           return;
         }
@@ -122,15 +124,15 @@ export default function ProfilePage() {
               <span className="font-semibold">Issue:</span> {selectedProject?.title}
             </p>
             <p>
-              <span className="font-semibold">Labels:</span> {selectedProject?.labels?.join(", ") || "No labels available."}
+              <span className="font-semibold">Labels:</span> {selectedProject?.labels || "No labels available."}
             </p>
             <p>
-              <span className="font-semibold">Topics:</span> {selectedProject?.topics?.join(", ") || "No topics available."}
+              <span className="font-semibold">Topics:</span> {selectedProject?.topics || "No topics available."}
             </p>
           </div>
           <div className="mt-4">
             <a
-              href={selectedProject?.url}
+              href={selectedProject?.issueUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-block"

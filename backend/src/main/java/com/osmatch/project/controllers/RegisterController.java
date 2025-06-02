@@ -5,14 +5,9 @@ import org.springframework.web.bind.annotation.*;
 import com.osmatch.project.dto.*;
 import com.osmatch.project.entity.*;
 import com.osmatch.project.repository.*;
-
-import java.util.*;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
-
-import java.util.HashSet;
 
 @RestController
 public class RegisterController {
@@ -48,16 +43,17 @@ public class RegisterController {
         user.setPassword(encodedPassword);
         user.setEmail(registerDto.getEmail());
         user.setIsOAuthLogin(0);
-        user.setSwipedRightProjects(new HashSet<Project>());
         user.setTotalMatches(0);
         user.setTotalSwipes(0);
+
+        userRepo.save(user);
 
         UserProfile newProfile = new UserProfile();
         newProfile.setUser(user);
         newProfile.setBio("No bio written.");
         profileRepo.save(newProfile);
-        user.setProfile(newProfile);
 
+        user.setProfile(newProfile);
         userRepo.save(user);
 
         return ResponseEntity.ok("User Registered Successfully!");

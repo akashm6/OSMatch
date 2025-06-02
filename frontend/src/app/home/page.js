@@ -147,7 +147,7 @@ export default function Home() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               userId: Number(currentUserId),
-              project,
+              issueUrl: project.url,
               direction,
             }),
           });

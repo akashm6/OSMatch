@@ -1,6 +1,5 @@
 package com.osmatch.project.entity;
 
-import java.time.LocalDateTime;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;

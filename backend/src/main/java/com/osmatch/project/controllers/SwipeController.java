@@ -6,11 +6,12 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.osmatch.project.dto.StatsDto;
 import com.osmatch.project.dto.SwipeDto;
-import com.osmatch.project.entity.Project;
+import com.osmatch.project.entity.GithubIssue;
+import com.osmatch.project.entity.LikedIssue;
 import com.osmatch.project.entity.UserEntity;
-import com.osmatch.project.repository.ProjectRepository;
+import com.osmatch.project.repository.GithubIssueRepository;
+import com.osmatch.project.repository.LikedIssueRepository;
 import com.osmatch.project.repository.UserRepository;
-import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,7 +21,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class SwipeController {
 
     @Autowired
-    private ProjectRepository projectRepo;
+    private GithubIssueRepository issueRepo;
+
+    @Autowired
+    private LikedIssueRepository likedRepo;
 
     @Autowired
     private UserRepository userRepo;
@@ -49,25 +53,21 @@ public class SwipeController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "User not found."));
 
-        Project p = swipeDto.getProject();
-        String bodyText = (p.getBodyText() != null && p.getBodyText() != "") ? p.getBodyText()
-                : "No Body Text Available.";
+        String issueUrl = swipeDto.getIssueUrl();
 
-        String description = (p.getDescription() != null && p.getDescription() != "") ? p.getDescription()
-                : "No Description Available.";
-
-        if (bodyText.length() > 255) {
-            bodyText = bodyText.substring(0, 251) + "...";
+        GithubIssue issue = issueRepo.findByIssueUrl(issueUrl);
+        if (issue == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Issue not found.");
         }
 
-        if (description.length() > 255) {
-            description = description.substring(0, 251) + "...";
+        if (likedRepo.existsByUserAndIssue(user, issue)) {
+            return ResponseEntity.ok("Issue already liked.");
         }
 
-        p.setBodyText(bodyText);
-        p.setDescription(description);
-        p.setUser(user);
-        projectRepo.save(p);
+        LikedIssue liked = new LikedIssue();
+        liked.setUser(user);
+        liked.setIssue(issue);
+        likedRepo.save(liked);
 
         return ResponseEntity.ok("Right Swipe recorded. Project now saved to database.");
     }

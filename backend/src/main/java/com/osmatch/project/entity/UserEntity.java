@@ -1,14 +1,5 @@
 package com.osmatch.project.entity;
 
-import java.util.List;
-import java.util.Set;
-
-import org.springframework.beans.factory.annotation.Autowired;
-
-import com.fasterxml.jackson.annotation.JsonBackReference;
-import com.fasterxml.jackson.annotation.JsonManagedReference;
-import com.osmatch.project.repository.UserRepository;
-
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -32,10 +23,6 @@ public class UserEntity {
     private UserProfile profile;
 
     // JsonManagedReference -> Will be serialized in GETs
-    @OneToMany(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true)
-    @JsonManagedReference
-    private Set<Project> swipedRightProjects;
-
     private String username;
 
     private String first_name;

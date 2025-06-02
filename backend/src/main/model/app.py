@@ -3,8 +3,10 @@ from sklearn.metrics.pairwise import cosine_similarity
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+import pymysql
 from dotenv import load_dotenv
 from datetime import datetime
+import time
 from typing import Optional
 import numpy as np
 import requests
@@ -48,6 +50,15 @@ LANGUAGE_KEYWORDS = {
     "unknown": []
 }
 
+db_conn = pymysql.connect(
+    host="localhost",
+    user="root",
+    password="",
+    database="restaurantdb",
+    charset="utf8mb4",
+    cursorclass=pymysql.cursors.DictCursor
+)
+
 # Pydantic model for a ResetRequest, used to indicate the user and the language to be wiped
 class ResetRequest(BaseModel):
     user_id: int
@@ -89,283 +100,161 @@ class SwipeRequest(BaseModel):
 async def record_swipe(swipe: SwipeRequest):
     if swipe.direction not in ["left", "right"]:
         raise HTTPException(status_code=400, detail="Invalid swipe direction")
-    
-    print("Received swipe:", swipe)
+
+    # Prevent duplicate swipes
+    if redis_client.sismember(f"user:{swipe.user_id}:seen_urls", swipe.project.url):
+        raise HTTPException(status_code=409, detail="Project already swiped")
+
+    redis_client.sadd(f"user:{swipe.user_id}:seen_urls", swipe.project.url)
 
     curr_len = redis_client.llen(f"user:{swipe.user_id}:swipes")
-
     new_len = redis_client.rpush(
         f"user:{swipe.user_id}:swipes",
         json.dumps({"direction": swipe.direction, "project": swipe.project.dict()})
     )
 
-    # if we stay at the same length after pushing, something went wrong
-    if(curr_len == new_len):
-        raise Exception("Swipe didn't correctly append to cache.")
-    
-    print(f"Appended swipe for user {swipe.user_id}. Redis rpush result (list length):", new_len)
-    
-    # current debug, will remove later
-    current_swipes = redis_client.lrange(f"user:{swipe.user_id}:swipes", 0, -1)
-    print(f"Current swipe list for user {swipe.user_id}:", current_swipes)
-    
+    if curr_len == new_len:
+        raise Exception("Swipe not recorded properly.")
+
     return {"message": "Swipe recorded"}
 
-def is_recent(updated_at_str):
-    try:
-        updated_at = datetime.strptime(updated_at_str, "%Y-%m-%dT%H:%M:%SZ")
-        return updated_at.year >= 2021
-    except:
-        return False
+def fetch_projects_from_db(language: str, seen_urls: set, limit: int = 300):
+    cursor = db_conn.cursor()
+    cursor.execute(
+        "SELECT * FROM github_issues WHERE primary_language = %s ORDER BY updated_at DESC LIMIT %s",
+        (language, limit)
+    )
+    rows = cursor.fetchall()
+    cursor.close()
 
-def infer_language(primary_lang, topics, labels, title):
-    if primary_lang:
-        return primary_lang.lower()
-    combined = [*topics, *labels, title.lower()]
-    for lang, keywords in LANGUAGE_KEYWORDS.items():
-        for keyword in keywords:
-            if any(keyword in item.lower() for item in combined):
-                return lang
-    return "unknown"
-
-def get_graphql_query(language: str, number: int = 100, cursor: Optional[str] = None):
-    after_clause = f', after: "{cursor}"' if cursor else ""
-    return f"""
-    {{
-      search(query: "language:{language} state:open label:\\"help wanted\\" stars:>10 archived:false", type: ISSUE, first: {number}{after_clause}) {{
-        pageInfo {{
-          hasNextPage
-          endCursor
-        }}
-        edges {{
-          node {{
-            ... on Issue {{
-              title
-              url
-              updatedAt
-              bodyText
-              labels(first: 5) {{
-                nodes {{ name }}
-              }}
-              repository {{
-                name
-                url
-                description
-                primaryLanguage {{ name }}
-                stargazers {{ totalCount }}
-                forkCount
-                watchers {{ totalCount }}
-                repositoryTopics(first: 5) {{
-                  nodes {{ topic {{ name }} }}
-                }}
-              }}
-            }}
-          }}
-        }}
-      }}
-    }}
-    """
-
-def parse_project(node):
-    updatedAt = node.get("updatedAt", "")
-    if not is_recent(updatedAt):
-        return None
-    title = node.get("title", "")
-    url = node.get("url", "")
-    bodyText = node.get("bodyText", "")
-    label_nodes = node.get("labels", {}).get("nodes", [])
-    labels = [label.get("name", "") for label in label_nodes]
-    repo = node.get("repository", {})
-    repo_name = repo.get("name", "")
-    repo_url = repo.get("url", "")
-    stargazerCount = repo.get("stargazers", {}).get("totalCount", 0)
-    description = repo.get("description", "")
-    forkCount = repo.get("forkCount", 0)
-    watchers = repo.get("watchers", {}).get("totalCount", 0)
-    topic_nodes = repo.get("repositoryTopics", {}).get("nodes", [])
-    topics = [t.get("topic", {}).get("name", "") for t in topic_nodes]
-    primaryLanguage = repo.get("primaryLanguage", {}).get("name", "")
-    primaryLanguage = infer_language(primaryLanguage, topics, labels, title)
-    return {
-        "title": title,
-        "url": url,
-        "updatedAt": updatedAt,
-        "bodyText": bodyText,
-        "labels": labels,
-        "repo_name": repo_name,
-        "repo_url": repo_url,
-        "primaryLanguage": primaryLanguage,
-        "stargazerCount": stargazerCount,
-        "description": description,
-        "forkCount": forkCount,
-        "watchers": watchers,
-        "topics": topics
-    }
-
-def fetch_default_projects(language: str, initial: bool = True, seen_urls: set = None):
     projects = []
-    seen_urls = seen_urls or set()
-    cursor = None
-    attempts = 3 if initial else 5
-    while attempts > 0:
-        query = get_graphql_query(language, number=30, cursor=cursor)
-        headers = {"Authorization": f"Bearer {GITHUB_TOKEN}"}
-        response = requests.post(GITHUB_API_URL, json={"query": query}, headers=headers)
-        if response.status_code != 200:
-            print("GitHub API error:", response.text)
-            break
-        data = response.json().get("data", {}).get("search", {})
-        edges = data.get("edges", [])
-        for edge in edges:
-            proj = parse_project(edge.get("node", {}))
-            if proj and proj["url"] not in seen_urls:
-                projects.append(proj)
-                seen_urls.add(proj["url"])
-        if not data.get("pageInfo", {}).get("hasNextPage"):
-            break
-        cursor = data.get("pageInfo", {}).get("endCursor")
-        attempts -= 1
+    for row in rows:
+        if row["issue_url"] in seen_urls:
+            continue
+        projects.append({
+            "title": row["title"],
+            "url": row["issue_url"],
+            "updatedAt": row["updated_at"].strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "bodyText": row["body"] or "",
+            "labels": json.loads(row["labels"] or "[]"),
+            "repo_name": row["repo_name"],
+            "repo_url": row["repo_url"],
+            "primaryLanguage": row["primary_language"],
+            "stargazerCount": row["stargazer_count"],
+            "description": "",
+            "forkCount": row["fork_count"],
+            "watchers": row["watchers"],
+            "topics": json.loads(row["topics"] or "[]")
+        })
     return projects
 
+def train_model(user_id: int):
+    print("training model...")
+    raw_swipes = redis_client.lrange(f"user:{user_id}:swipes", 0, -1)
 
-def train_model(user_id):
-    swipe_data = redis_client.lrange(f"user:{user_id}:swipes", 0, -1)
-    print(f"[ML] Total swipes: {len(swipe_data)}")
-    
-    if len(swipe_data) < 25:
-        print("[ML] Not enough data to train — need at least 25 swipes")
-        return [], 0
-    
-    records, directions = [], []
-    for val in swipe_data:
-        if not val.strip().startswith("{"):
+    right_swipes = []
+    for entry in raw_swipes:
+        entry = entry.strip()
+        if not entry.startswith("{"):
             continue
         try:
-            data = json.loads(val)
-            project = data.get("project", {})
-            direction = data.get("direction", "left")
-            text = (
-                f"{project.get('title', '')} "
-                f"{project.get('primaryLanguage', '')} "
-                f"{project.get('description', '')} "
-                f"{' '.join(project.get('labels', []))} "
-                f"{' '.join(project.get('topics', []) )} "
-                f"{project.get('stargazerCount', 0)} "
-                f"{project.get('forkCount', 0)} "
-                f"{project.get('watchers', 0)}"
-            )
-            records.append(text)
-            directions.append(1 if direction == "right" else 0)
-        except Exception as e:
-            print("Error parsing swipe data for ML:", e)
-    
-    if not records:
+            obj = json.loads(entry)
+        except:
+            continue
+        if obj.get("direction") == "right":
+            right_swipes.append(obj["project"])
+    if len(right_swipes) < 25:
+        print(f"[ML] Not enough right‐swipes ({len(right_swipes)}) to train.")
         return [], 0
 
-    vectorizer = TfidfVectorizer(stop_words="english")
+    records = []
+    directions = []
+    for entry in raw_swipes:
+        entry = entry.strip()
+        if not entry.startswith("{"):
+            continue
+        try:
+            obj = json.loads(entry)
+        except:
+            continue
+        proj = obj.get("project", {})
+        dir_flag = obj.get("direction", "left")
+        text = (
+            f"{proj.get('title','')} {proj.get('primaryLanguage','')} "
+            f"{proj.get('description','')} {' '.join(proj.get('labels', []))} "
+            f"{' '.join(proj.get('topics', []))} {proj.get('stargazerCount', 0)} "
+            f"{proj.get('forkCount', 0)} {proj.get('watchers', 0)}"
+        )
+        records.append(text)
+        directions.append(1 if dir_flag == "right" else 0)
+
+    vectorizer = TfidfVectorizer(stop_words="english", max_features=500)
     tfidf_matrix = vectorizer.fit_transform(records)
-    print("[ML] TF-IDF matrix shape:", tfidf_matrix.shape)
 
     liked_indices = [i for i, d in enumerate(directions) if d == 1]
-    print("[ML] Liked indices:", liked_indices)
-    if not liked_indices:
-        print("[ML] No liked swipes found.")
+    liked_mean = np.asarray(tfidf_matrix[liked_indices].mean(axis=0)).reshape(1, -1)
+
+    lang = redis_client.get(f"user:{user_id}:language") or "python"
+    seen = redis_client.smembers(f"user:{user_id}:seen_urls")
+    candidates = fetch_projects_from_db(lang, seen_urls=set(seen), limit=1000)
+
+    if not candidates:
         return [], 0
 
-    liked_mean = tfidf_matrix[liked_indices].mean(axis=0)
-    liked_mean = np.asarray(liked_mean).reshape(1, -1)  
-
-    candidate_projects = fetch_default_projects(redis_client.get(f"user:{user_id}:language") or "python", initial=False)
-    
-    stored_swipes = redis_client.lrange(f"user:{user_id}:swipes", 0, -1)
-    swiped_urls = set()
-    for val in stored_swipes:
-        if not val.strip().startswith("{"):
-            continue
-        try:
-            swipe_info = json.loads(val)
-            if "project" in swipe_info:
-                swiped_urls.add(swipe_info["project"].get("url", ""))
-        except Exception as e:
-            print("Error parsing swipe data for filtering:", e)
-    
-    candidate_projects_filtered = [proj for proj in candidate_projects if proj["url"] not in swiped_urls]
-    if not candidate_projects_filtered:
-        print("[ML] No new candidates after filtering. Falling back.")
-        candidate_projects_filtered = candidate_projects
-    else:
-        print("CANDIDATE PROJECTS AFTER FILTERING: ", candidate_projects_filtered)
-
     candidate_texts = []
-    for proj in candidate_projects_filtered:
-        text = (
-            f"{proj.get('title', '')} "
-            f"{proj.get('primaryLanguage', '')} "
-            f"{proj.get('description', '')} "
-            f"{' '.join(proj.get('labels', []))} "
-            f"{' '.join(proj.get('topics', []))} "
-            f"{proj.get('stargazerCount', 0)} "
-            f"{proj.get('forkCount', 0)} "
-            f"{proj.get('watchers', 0)}"
+    star_counts = []
+    for proj in candidates:
+        txt = (
+            f"{proj['title']} {proj['primaryLanguage']} "
+            f"{proj['description']} {' '.join(proj['labels'])} "
+            f"{' '.join(proj['topics'])} {proj['stargazerCount']} "
+            f"{proj['forkCount']} {proj['watchers']}"
         )
-        candidate_texts.append(text)
+        candidate_texts.append(txt)
+        star_counts.append(proj["stargazerCount"])
 
-    candidate_tfidf = vectorizer.transform(candidate_texts)
-    candidate_similarity = cosine_similarity(liked_mean, candidate_tfidf)
+    cand_tfidf = vectorizer.transform(candidate_texts)
+    sim_scores = cosine_similarity(liked_mean, cand_tfidf).flatten()
+    star_array = np.array(star_counts)
+    max_star = star_array.max() if star_array.max() > 0 else 1
+    adjusted = sim_scores * (1 + 0.6 * (star_array / max_star))
 
-    print("[ML] Top similarity score:", candidate_similarity.max())
-    print("[ML] Nonzero similarities:", np.count_nonzero(candidate_similarity))
+    # grab the top 10
+    sorted_idx = adjusted.argsort()[::-1]
+    top10 = [candidates[i] for i in sorted_idx[:10]]
+    filtered_count = len(candidates) - len(top10)
+    return top10, filtered_count
 
-    star_counts = np.array([proj.get("stargazerCount", 0) for proj in candidate_projects_filtered])
-    max_star = star_counts.max() if star_counts.max() > 0 else 1
-    alpha = 0.6
-    adjusted_similarity = candidate_similarity.copy()
-
-    for i in range(candidate_similarity.shape[1]):
-        norm_star = star_counts[i] / max_star
-        adjusted_similarity[0, i] = candidate_similarity[0, i] * (1 + alpha * norm_star)
-
-    sorted_indices = adjusted_similarity.argsort()[0][::-1]
-    print("[ML] Top 5 scores:", adjusted_similarity[0][sorted_indices[:5]])
-    print("[ML] Top 5 URLs:", [candidate_projects_filtered[i]["url"] for i in sorted_indices[:5]])
-
-    recommendations = [candidate_projects_filtered[i] for i in sorted_indices][:10]
-    return recommendations, len(candidate_projects_filtered) - len(recommendations)
-    
-# grabs new recommended projects
 @app.get("/recommendations/")
 async def get_recommendations(user_id: int):
-    language = redis_client.get(f"user:{user_id}:language") or "r"
-    
+    print(f"=== GET /recommendations/ CALLED FOR USER {user_id}")
     stored_swipes = redis_client.lrange(f"user:{user_id}:swipes", 0, -1)
-    # in the event of a language change or initial bootup
-    if len(stored_swipes) < 10:
-        default_projects = fetch_default_projects(language, initial = True)
-        if not default_projects:
-            return {"message": "No projects found. Try swiping more!"}
-        swiped_urls = set()
-        for val in stored_swipes:
-            if not val.strip().startswith("{"):
-                continue
-            try:
-                swipe_info = json.loads(val)
-                if "project" in swipe_info:
-                    swiped_urls.add(swipe_info["project"].get("url", ""))
-            except Exception as e:
-                print("Error parsing swipe data during fallback filtering:", e)
-        filtered_projects = [proj for proj in default_projects if proj["url"] not in swiped_urls]
-        random.shuffle(filtered_projects)
-        print("Fallback recommendations:", filtered_projects if filtered_projects else default_projects)
-        return {"recommended_repos": filtered_projects if filtered_projects else default_projects}
-    # otherwise, we can train the model
-    recommendations, filtered_count = train_model(user_id)
-    if not recommendations:
-        return {"message": "Not enough data, swipe more to get recommendations!"}
-    
-    return {
-        "recommended_repos": recommendations,
-        "filtered_count": filtered_count
-    }
+    seen_urls = set()
+    for entry in stored_swipes:
+        entry = entry.strip()
+        if not entry.startswith("{"):
+            continue
+        try:
+            obj = json.loads(entry)
+            seen_urls.add(obj["project"].get("url", ""))
+        except:
+            continue
+
+    #if we have at least 25 right‐swipes, train
+    if len([e for e in stored_swipes if e.strip().startswith("{") and json.loads(e).get("direction") == "right"]) >= 25:
+        recs, filtered_count = train_model(user_id)
+        if recs:
+            print("[recommendations] returning model‐trained results")
+            return {"recommended_repos": recs, "filtered_count": filtered_count}
+        else:
+            print("[recommendations] not enough high‐quality model data, falling back…")
+
+    language = redis_client.get(f"user:{user_id}:language") or "python"
+    projects = fetch_projects_from_db(language, seen_urls=seen_urls, limit=300)
+    if not projects:
+        return {"message": "No projects found. Try swiping more!"}
+    random.shuffle(projects)
+    return {"recommended_repos": projects, "filtered_count": len(seen_urls)}
 
 # debug stuff
 @app.get("/debug/swipes/")

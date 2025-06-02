@@ -1,7 +1,5 @@
 package com.osmatch.project.dto;
 
-import com.osmatch.project.entity.Project;
-
 import lombok.*;
 
 @Getter
@@ -12,7 +10,7 @@ import lombok.*;
 public class SwipeDto {
 
     Long userId;
-    Project project;
+    String issueUrl;
     String direction;
 
 }

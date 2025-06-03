@@ -50,14 +50,19 @@ LANGUAGE_KEYWORDS = {
     "unknown": []
 }
 
-db_conn = pymysql.connect(
-    host="localhost",
-    user="root",
-    password="",
-    database="restaurantdb",
-    charset="utf8mb4",
-    cursorclass=pymysql.cursors.DictCursor
-)
+def check_db_conn():
+    global db_conn
+    try:
+        db_conn.ping(reconnect=True)
+    except:
+        db_conn = pymysql.connect(
+            host="localhost",
+            user="root",
+            password="",
+            database="restaurantdb",
+            charset="utf8mb4",
+            cursorclass=pymysql.cursors.DictCursor
+        )
 
 # Pydantic model for a ResetRequest, used to indicate the user and the language to be wiped
 class ResetRequest(BaseModel):
@@ -119,6 +124,7 @@ async def record_swipe(swipe: SwipeRequest):
     return {"message": "Swipe recorded"}
 
 def fetch_projects_from_db(language: str, seen_urls: set, limit: int = 300):
+    check_db_conn()
     cursor = db_conn.cursor()
     cursor.execute(
         "SELECT * FROM github_issues WHERE primary_language = %s ORDER BY updated_at DESC LIMIT %s",

@@ -77,10 +77,10 @@ public class PasswordChangeController {
 
                 PasswordResetToken passResetToken = passRepo.findByToken(token)
                                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED,
-                                                "Invalid token."));
+                                                "Expired token. Send another email."));
                 if (passResetToken == null) {
                         return ResponseEntity.badRequest().body(Map.of(
-                                        "message", "Invalid token. Redirect."));
+                                        "message", "Invalid token. Send another email."));
                 }
 
                 if (passResetToken.getUsed() == true) {

@@ -20,6 +20,9 @@ import {
   DiPhp,
   DiPerl,
   DiSwift,
+  DiMarkdown,
+  DiPostgresql,
+  DiMongodb
 } from "react-icons/di";
 import {
   SiLua,
@@ -47,6 +50,9 @@ const icons = [
   { icon: <DiPhp />, className: "text-indigo-500" },
   { icon: <DiPerl />, className: "text-purple-300" },
   { icon: <DiSwift />, className: "text-orange-300" },
+  { icon: <DiMarkdown />, className: "text-teal-400" },
+  { icon: <DiMongodb />, className: "text-green-300" },
+  { icon: <DiPostgresql />, className: "text-blue-400" },
   { icon: <SiLua />, className: "text-blue-800" },
   { icon: <SiCplusplus />, className: "text-blue-400" },
   { icon: <SiR />, className: "text-sky-300" },
@@ -76,7 +82,7 @@ const FloatingIcons = () => {
       {icons.map((item, index) => (
         <motion.div
           key={index}
-          className={`absolute text-4xl ${item.className}`}
+          className={`absolute text-7xl ${item.className}`}
           initial={{ opacity: 0, y: 0 }}
           animate={{ opacity: [0, 1, 0.6, 0], y: [0, -20, 0] }}
           transition={{

@@ -1,62 +1,95 @@
 'use client'
 import {React, useState} from "react";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { z } from "zod"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+
+import {
+  Form,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormControl,
+  FormDescription,
+  FormMessage,
+} from "@/components/ui/form"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 
 export default function passwordChangeInputPage() {
 
-    const [formData, setFormData] = useState({
-        "email": ''
-    });
+    const emailSchema = z.object({
+      "email": z.string().email({message: "Invalid email address. Try again."})
+    })
+
+    const form = useForm({
+      resolver: zodResolver(emailSchema),
+      defaultValues: {
+        email: ""
+      }
+    })
 
     const [confirmationMessage, setConfirmationMessage] = useState('');
 
-    const handleSubmit = async () => {
+    const onSubmit = async (data) => {
         try {
           const res = await fetch(`http://localhost:8080/auth/sendEmail`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: formData.email,
+            body: data.email,
           });
-  
-          const data = await res.json();
-          setConfirmationMessage(data.message || '');
+
+          if(!res.ok) {
+            console.log(res)
+            const text = await res.text() ;
+            form.setError("root", {message: text});
+            return;
+          }
+          const responseData = await res.json();
+          setConfirmationMessage(responseData.message || '');
+
         }
         catch(error) {
-          console.error(error);
+          form.setError("root", { message: "Something went wrong. Please try again." })
+          console.error(error)
         }  
     }
 
-    const handleChange = (e) => {
-        const {name, value} = e.target;
-        setFormData((prev) => ({
-          ...prev,
-          [name]: value  
-        }));
-        console.log(formData);
-    }
-
     return (
-        <div>
-            <Input
-            id = "email"
-            name ="email"
-            type = "email"
-            placeholder = "m@email.com"
-            value = {formData.email}
-            onChange = {handleChange}
-            required
-            >
-            </Input>
-            <Button variant="outline" className="w-full" onClick = {handleSubmit}>
-                Send Password Reset Email
-            </Button>
+      <div className="max-w-md mx-auto mt-12">
+        <h1 className="text-2xl font-bold mb-6">Reset Password</h1>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <FormField
+              key="email"
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email</FormLabel>
+                  <FormControl>
+                    <Input 
+                    {...field}
+                    type="email"
+                    placeholder="m@mail.com" 
+                    />
+                  </FormControl>
+                  <FormDescription>An email will be sent to this email to reset your password.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+          {form.formState.errors.root && (
+                      <p className="text-sm text-red-500">{form.formState.errors.root.message}</p>
+          )}
+
+          <Button type="submit" className="w-full">
+            Send Email
+          </Button>
+          </form> 
+        </Form>
             {confirmationMessage && <p>{confirmationMessage}</p>}
         </div>
     )
-
-
-
-
-
 }

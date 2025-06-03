@@ -3,81 +3,112 @@ import {useState, React} from "react";
 import { useSearchParams } from "next/navigation";
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button";
+import { z } from "zod"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import {
+    Form,
+    FormField,
+    FormItem,
+    FormLabel,
+    FormControl,
+    FormDescription,
+    FormMessage,
+  } from "@/components/ui/form"
  
+  const formSchema = z.object({
+    "password": z.string().min(6, {message: "Password must be at least 6 characters long."}),
+    "confirmPassword": z.string().min(6, {message: "Confirm Password is required."})
+})
+.refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords must match.",
+    path: ["confirmPassword"]
+});
 
 export default function passwordChangePage() {
 
     const router = useRouter();
     const params = useSearchParams();
     const token = params.get("token");
-
-    const [formData, setFormData] = useState(
-        {
-            "newPassword": '',
-            "confirmedPassword": '',
-        }
-    )
-
     const [response, setResponse] = useState('');
-    
-    const handleChange = (e) => {
-        const {name, value} = e.target;
-        setFormData((prev) => ({
-          ...prev,
-          [name]: value  
-        }));
+
+    const form = useForm({
+        resolver: zodResolver(formSchema),
+        defaultValues: {
+            password: "",
+            confirmPassword: ""
+        }
+    });
+
+    const renderLabel = (label) => {
+
+        return (label === "confirmPassword") ? "Confirm Password" : "Password"
     }
-    
-    const handleSubmit = async (e) => {
+
+    const onSubmit = async (data, e) => {
         e.preventDefault();
         try {
             const res = await fetch(`http://localhost:8080/auth/passwordChange?token=${token}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(formData)
+                body: JSON.stringify(data)
             });
-            const data = await res.json();
-            setResponse(data.message || "");
-            if(data.redirect) {
+
+            if(!res.ok) {
+                const text = await res.json();
+                form.setError("root", {message: text.message});
+                return;
+            }
+
+            const responseData = await res.json();
+            setResponse(responseData.message || "");
+            if(responseData.redirect) {
                 router.push("/")
             }
         }
         catch(error) {
-            console.error(error);
+            form.error("root", {message: "Something went wrong. Try again."});
         }    
     }
 
     return (
-        <div>
-        <form onSubmit={handleSubmit}>
-            <div>
-                <Input 
-                id="newPassword"
-                name = "newPassword"
-                value = {formData.newPassword}
-                type ="password"
-                placeholder="New Password"
-                onChange = {handleChange} 
-                required
-                />
+    <div className="max-w-md mx-auto mt-12">
+      <h1 className="text-2xl font-bold mb-6">Create New Password</h1>
+        <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          {["password", "confirmPassword"].map((fieldName) => (
+            <FormField
+              key={fieldName}
+              control={form.control}
+              name={fieldName}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{renderLabel(fieldName)}</FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="password"
+                      placeholder=""
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          ))}
 
-                <Input 
-                id="confirmedPassword"
-                name = "confirmedPassword" 
-                value = {formData.confirmedPassword}
-                type="password" 
-                placeholder="Confirm Password" 
-                onChange = {handleChange}
-                required
-                />
-                <Button type="submit" className="w-full">
-                    Change Password.
-                </Button>
-            </div>
+          {form.formState.errors.root && (
+            <p className="text-md text-red-500">{form.formState.errors.root.message}</p>
+          )}
+
+          <Button type="submit" className="w-full">
+            Register
+          </Button>
         </form>
-
-        {response && <p>{response}</p>}
+        
+      </Form>
+        {response && <p >{response}</p>}
         </div>
     )
 }

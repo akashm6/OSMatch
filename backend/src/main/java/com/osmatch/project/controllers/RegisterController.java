@@ -4,6 +4,7 @@ import org.springframework.web.bind.annotation.*;
 
 import com.osmatch.project.dto.*;
 import com.osmatch.project.entity.*;
+import java.util.Map;
 import com.osmatch.project.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -56,7 +57,8 @@ public class RegisterController {
         user.setProfile(newProfile);
         userRepo.save(user);
 
-        return ResponseEntity.ok("User Registered Successfully!");
+        return ResponseEntity.ok(Map.of(
+                "message", "User Registered Successfully!"));
     }
 
 }

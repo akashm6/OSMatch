@@ -43,9 +43,8 @@ export default function passwordChangeInputPage() {
           });
 
           if(!res.ok) {
-            console.log(res)
-            const text = await res.text() ;
-            form.setError("root", {message: text});
+            const text = await res.json() ;
+            form.setError("root", {message: text.message});
             return;
           }
           const responseData = await res.json();

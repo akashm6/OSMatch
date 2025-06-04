@@ -19,7 +19,15 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Info } from "lucide-react";
+import { 
+  AlertDialog, 
+  AlertDialogTrigger, 
+  AlertDialogContent, AlertDialogHeader, 
+  AlertDialogTitle, 
+  AlertDialogDescription, 
+  AlertDialogFooter,
+  AlertDialogAction
+} from "@/components/ui/alert-dialog";
 import DoubleRingSpinner from "../components/DoubleRingSpinner";
 
 export default function Home() {
@@ -264,11 +272,7 @@ export default function Home() {
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem className="hidden md:block">
-                <BreadcrumbLink href="#">Your Recs</BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator className="hidden md:block" />
-              <BreadcrumbItem>
-                <BreadcrumbPage>Swiping</BreadcrumbPage>
+                <BreadcrumbLink>Your Recs</BreadcrumbLink>
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
@@ -342,6 +346,25 @@ export default function Home() {
 
           <div className="sticky bottom-4 z-10 flex justify-center">
             <div className="bg-muted/10 border border-border px-6 py-4 rounded-xl flex flex-wrap gap-4 shadow-lg backdrop-blur-md">
+            <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" className="px-6 py-2">Help</Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>How does this work?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        <strong>Left Swipe:</strong> Left swipes skip the project. You can see it again later.<br />
+                        <strong>Right Swipe:</strong> Interested? Right swipes save projects to your profile.
+                      </AlertDialogDescription>
+
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogAction>Got it</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+
               <Button
                 variant="destructive"
                 onClick={() => handleSwipe("left")}

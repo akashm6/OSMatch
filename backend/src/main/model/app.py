@@ -111,7 +111,9 @@ def extract_top_interest(swipes):
             if obj.get("direction") == "right":
                 project = obj["project"]
                 topics = project.get("topics", [])
-                for tag in topics:
+                labels = project.get("labels", [])
+                for tag in topics + labels:
+                    if tag not in LANGUAGE_KEYWORDS and tag not in ["enhancement", "good first issue", "help wanted", "bug", "documentation"] and len(tag) > 1:
                         topic_freq[tag] = topic_freq.get(tag, 0) + 1
         except:
             continue
@@ -315,7 +317,7 @@ def train_model(user_id: int):
 @app.get("/recommendations/")
 async def get_recommendations(user_id: int, language: Optional[str] = None):
     print(f"=== GET /recommendations/ for user {user_id}, lang: {language}")
-
+    
     if language:
         redis_client.set(f"user:{user_id}:language", language)
     stored_language = redis_client.get(f"user:{user_id}:language") or "python"

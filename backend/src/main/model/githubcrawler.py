@@ -93,7 +93,7 @@ def insert_issue(cursor, issue):
                 body,                                       
                 repo.get("name", ""),                            
                 repo.get("url", ""),                            
-                repo.get("primaryLanguage", {}).get("name", "unknown"),
+                repo.get("primaryLanguage", {}).get("name", "unknown").lower(),
                 desc,                                              
                 repo.get("stargazers", {}).get("totalCount", 0),  
                 repo.get("forkCount", 0),                         
@@ -110,7 +110,6 @@ def insert_issue(cursor, issue):
     except Exception as e:
         print("Error inserting issue:", e)
         print("Offending issue data:", json.dumps(issue, indent=2))
-
 
 
 def crawl_issues(language):
@@ -186,7 +185,7 @@ def crawl_issues(language):
 
 if __name__ == "__main__":
     try:
-        for lang in ["python", "java", "javascript", "go", "c++", "c", "c#", "rust", "shell", "r"]:
+        for lang in ["c++"]:
             crawl_issues(lang)
     finally:
         conn.close()

@@ -1,16 +1,13 @@
-
 "use client";
-
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import ProjectCard from "../components/ProjectCard";
 import {
-  HoverCard,
-  HoverCardTrigger,
-  HoverCardContent,
-} from "@/components/ui/hover-card";
-import { Info } from "lucide-react";
-
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/ui/app-sidebar";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -19,31 +16,31 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import {
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AppSidebar } from "@/components/ui/app-sidebar";
+import { Button } from "@/components/ui/button";
+import { Info } from "lucide-react";
 
 export default function Home() {
   const router = useRouter();
   const [currentUserId, setUserId] = useState(null);
   const [projects, setProjects] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [noMoreProjects, setNoMoreProjects] = useState(false);
+  const [isSwiping, setIsSwiping] = useState(false);
   const [currentProjectIndex, setCurrentProjectIndex] = useState(0);
   const [selectedLanguage, setSelectedLanguage] = useState("");
   const [userStats, setUserStats] = useState({
     totalSwipes: 0,
     totalMatches: 0,
   });
-  const [filteredCount, setFilteredCount] = useState(0);
+  const [topInterest, setTopInterest] = useState([]);
 
-  // Check token validity and also grab the user stats
   useEffect(() => {
     const token = localStorage.getItem("token");
-    const validateToken = async () => {
+    const savedLang = localStorage.getItem("selectedLanguage") || "python";
+
+    const validateTokenAndStats = async () => {
       try {
         const res = await fetch("http://localhost:8080/protected/jwt", {
           method: "GET",
@@ -53,74 +50,120 @@ export default function Home() {
         if (!res.ok) {
           router.push("/");
           return;
-        } else {
-          const data = await res.json();
-          handleLanguageChange("python");
-          setUserId(data.userId);
-          setUserStats({
-            totalSwipes: data.totalSwipes,
-            totalMatches: data.totalMatches,
-          });
-          fetchRecommendations(data.userId);
         }
+
+        const data = await res.json();
+        setUserId(data.userId);
+
+        setUserStats({
+          totalSwipes: data.totalSwipes,
+          totalMatches: data.totalMatches,
+        });
+
+        handleLanguageChange(savedLang);
       } catch (error) {
         console.error(error);
       }
     };
 
-    validateToken();
+    validateTokenAndStats();
   }, [router]);
+
+  useEffect(() => {
+    console.log("📌 topInterest updated:", topInterest);
+  }, [topInterest]);
+
+  useEffect(() => {
+    const checkExhaustion = async () => {
+      if (!currentUserId || !selectedLanguage) return;
+      try {
+        const res = await fetch(
+          `http://localhost:8000/exhaustion/?user_id=${currentUserId}&language=${encodeURIComponent(
+            selectedLanguage
+          )}`
+        );
+        const data = await res.json();
+        setNoMoreProjects(data.exhausted); 
+      } catch (err) {
+        console.error("Error checking exhaustion:", err);
+      }
+    };
+
+    checkExhaustion();
+  }, [currentUserId, selectedLanguage]);
 
   const handleLanguageChange = async (lang) => {
     setSelectedLanguage(lang);
+    localStorage.setItem("selectedLanguage", lang);
+
     if (currentUserId) {
       try {
-        await fetch("http://localhost:8000/reset/", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            user_id: Number(currentUserId),
-            language: lang,
-          }),
-        });
-        fetchRecommendations(currentUserId);
+        await fetchRecommendations(currentUserId, lang);
       } catch (error) {
-        console.error("Error resetting model:", error);
+        console.error("Error fetching for new language:", error);
       }
     }
   };
 
-  const fetchRecommendations = async (id) => {
+  const fetchRecommendations = async (id, lang) => {
+    setIsLoading(true);
+    setNoMoreProjects(false); 
+
     try {
       const res = await fetch(
-        `http://localhost:8000/recommendations/?user_id=${id}`
+        `http://localhost:8000/recommendations/?user_id=${id}&language=${encodeURIComponent(
+          lang
+        )}`
       );
       const data = await res.json();
+      console.log("Fetched recommendations:", data);
+
+      if (data.message && data.message.includes("Come back later")) {
+        localStorage.setItem(`exhausted:${lang}`, "true");
+        setProjects([]);
+        setNoMoreProjects(true);
+        return;
+      } else {
+        localStorage.setItem(`exhausted:${lang}`, "false");
+      }
+
       if (Array.isArray(data.recommended_repos)) {
         setProjects(data.recommended_repos);
         setCurrentProjectIndex(0);
-        setFilteredCount(data.filtered_count || 0);
+
+        const normalizedInterest = Array.isArray(data.top_interest)
+          ? data.top_interest
+          : [data.top_interest || "N/A"];
+
+        setTopInterest((prev) => {
+          const prevStr = JSON.stringify(prev);
+          const newStr = JSON.stringify(normalizedInterest);
+          return prevStr !== newStr ? normalizedInterest : prev;
+        });
       } else {
         setProjects([]);
+        setNoMoreProjects(true);
       }
     } catch (error) {
       console.error("Error fetching recommendations:", error);
+      setNoMoreProjects(true);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleSwipe = async (direction) => {
-    if (!currentUserId || projects.length === 0) return;
-    if (direction === "right") {
-      setUserStats({
-        totalMatches: userStats.totalMatches + 1,
-        totalSwipes: userStats.totalSwipes + 1,
-      });
-    } else {
-      setUserStats({
-        totalMatches: userStats.totalMatches,
-        totalSwipes: userStats.totalSwipes + 1,
-      });
-    }
+    if (!currentUserId || projects.length === 0 || isSwiping || noMoreProjects)
+      return;
+
+    setIsSwiping(true);
+
+    setUserStats((prev) => ({
+      totalSwipes: prev.totalSwipes + 1,
+      totalMatches:
+        direction === "right" ? prev.totalMatches + 1 : prev.totalMatches,
+    }));
+
     const project = projects[currentProjectIndex];
     const payload = {
       user_id: Number(currentUserId),
@@ -128,44 +171,45 @@ export default function Home() {
       direction,
     };
 
-    console.log("Sending swipe payload:", payload);
-
     try {
-      // Send to ML model
-      const res = await fetch("http://localhost:8000/swipe/", {
+      const swipeRes = await fetch("http://localhost:8000/swipe/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const responseData = await res.json();
-      console.log("Response from swipe:", responseData);
 
-      // Send to Java backend to update
+      const swipeData = await swipeRes.json();
+
       if (direction === "right") {
-        try {
-          await fetch("http://localhost:8080/swipeRight/", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              userId: Number(currentUserId),
-              issueUrl: project.url,
-              direction,
-            }),
-          });
-        } catch (error) {
-          console.error(error);
-        }
+        await fetch("http://localhost:8080/swipeRight/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: Number(currentUserId),
+            issueUrl: project.url,
+            direction,
+          }),
+        });
       }
 
-      // Advance to next
       const nextIndex = currentProjectIndex + 1;
       if (nextIndex < projects.length) {
         setCurrentProjectIndex(nextIndex);
       } else {
-        fetchRecommendations(currentUserId);
+        setProjects([]);
+      }
+
+      if (swipeData.model_trained) {
+        await fetchRecommendations(currentUserId, selectedLanguage);
+      }
+
+      if (nextIndex >= projects.length && !swipeData.model_trained) {
+        await fetchRecommendations(currentUserId, selectedLanguage);
       }
     } catch (error) {
       console.error("Error swiping:", error);
+    } finally {
+      setIsSwiping(false);
     }
   };
 
@@ -175,7 +219,7 @@ export default function Home() {
       userId: Number(currentUserId),
     };
     try {
-      const res = await fetch("http://localhost:8080/updateStats", {
+      await fetch("http://localhost:8080/updateStats", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -215,92 +259,107 @@ export default function Home() {
         </header>
 
         <main className="flex flex-1 flex-col gap-4 p-4 dark:bg-background">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
-            <Card className="bg-gradient-to-br from-indigo-900/60 to-indigo-700/30 border border-indigo-500 shadow-[0_0_20px_#6366f1] text-white hover:shadow-[0_0_25px_#6366f1]/60 transition">
-              <CardHeader className="text-center">
-                <CardTitle className="text-sm font-semibold tracking-wide text-indigo-200">
-                  Total Swipes
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-center">
-                <p className="text-3xl font-bold">{userStats.totalSwipes}</p>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-gradient-to-br from-purple-900/60 to-purple-700/30 border border-purple-500 shadow-[0_0_20px_#8b5cf6] text-white hover:shadow-[0_0_25px_#8b5cf6]/60 transition">
-              <CardHeader className="text-center">
-                <CardTitle className="text-sm font-semibold tracking-wide text-purple-200">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
+            <Card className="bg-gradient-to-br from-green-900/60 to-green-700/30 border border-green-500 shadow-[0_0_20px_#16a34a]/40 text-white">
+              <CardHeader>
+                <CardTitle className="text-sm text-green-200">
                   Total Matches
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-center">
+              <CardContent>
                 <p className="text-3xl font-bold">{userStats.totalMatches}</p>
               </CardContent>
             </Card>
 
-            <Card className="relative bg-card rounded-lg p-4 pt-6 shadow-md text-center">
-              <div className="absolute top-2 right-2">
-                <HoverCard>
-                  <HoverCardTrigger asChild>
-                    <Info className="w-4 h-4 text-muted-foreground hover:text-foreground cursor-pointer" />
-                  </HoverCardTrigger>
-                  <HoverCardContent className="w-64 text-sm">
-                    Number of recommended projects filtered out because you've
-                    already swiped on them.
-                  </HoverCardContent>
-                </HoverCard>
-              </div>
+            <Card className="bg-gradient-to-br from-red-900/60 to-red-700/30 border border-red-500 shadow-[0_0_20px_#dc2626]/40 text-white">
+              <CardHeader>
+                <CardTitle className="text-sm text-red-200">
+                  Total Swipes
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-bold">{userStats.totalSwipes}</p>
+              </CardContent>
+            </Card>
 
-              <h2 className="text-sm font-semibold text-muted-foreground">
-                Filtered Projects
-              </h2>
-              <p className="text-3xl pt-5 font-bold">
-                {userStats.filteredCount ?? 0}
-              </p>
+            <Card className="bg-muted/10 border border-indigo-700 shadow-inner">
+              <CardHeader>
+                <CardTitle className="text-sm text-indigo-300 flex items-center gap-1">
+                  <Info className="w-4 h-4 text-indigo-400" />
+                  Top Interest
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {Array.isArray(topInterest)
+                  ? topInterest.join(", ")
+                  : topInterest}
+              </CardContent>
             </Card>
           </div>
-          <Card>
+
+          <Card className="flex flex-col max-h-[60vh] overflow-hidden">
             <CardHeader>
               <CardTitle>Swipe Project</CardTitle>
             </CardHeader>
-            <CardContent>
-              {projects.length > 0 ? (
-                <ProjectCard project={projects[currentProjectIndex]} />
+            <CardContent className="flex-1 overflow-auto">
+              {isLoading ? (
+                <div className="text-center text-gray-400 dark:text-gray-300 py-6">
+                  ⏳ Loading your personalized projects...
+                </div>
+              ) : noMoreProjects ? (
+                <div className="text-center text-gray-400 dark:text-gray-300 py-6">
+                  🎉 You've swiped through all available projects in this
+                  language!
+                  <br />
+                  Check back tomorrow for new issues or switch languages.
+                </div>
               ) : (
-                <p>Loading projects...</p>
+                <div className="min-h-[40vh] max-h-[50vh] overflow-y-auto">
+                  <ProjectCard project={projects[currentProjectIndex]} />
+                </div>
               )}
             </CardContent>
           </Card>
 
-          <div className="mt-6 flex flex-wrap justify-center gap-4">
-            <button
-              onClick={() => handleSwipe("left")}
-              className="px-6 py-2 rounded-lg bg-red-600 text-white font-semibold transition duration-200 hover:shadow-[0_0_10px_#dc2626]"
-            >
-              ⬅ Left
-            </button>
-            <button
-              onClick={() => handleSwipe("right")}
-              className="px-6 py-2 rounded-lg bg-green-600 text-white font-semibold transition duration-200 hover:shadow-[0_0_10px_#16a34a]"
-            >
-              ➡ Right
-            </button>
-            <button
-              onClick={goToProfile}
-              className="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold transition duration-200 hover:shadow-[0_0_10px_#3b82f6]"
-            >
-              Profile
-            </button>
-            <button
-              onClick={handleLogout}
-              className="px-6 py-2 rounded-lg bg-neutral-700 text-white font-semibold transition duration-200 hover:shadow-[0_0_10px_#a3a3a3]"
-            >
-              Logout
-            </button>
+          {isSwiping && (
+            <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
+              <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-indigo-500 border-solid"></div>
+            </div>
+          )}
+
+          <div className="sticky bottom-4 z-10 flex justify-center">
+            <div className="bg-muted/10 border border-border px-6 py-4 rounded-xl flex flex-wrap gap-4 shadow-lg backdrop-blur-md">
+              <Button
+                variant="destructive"
+                onClick={() => handleSwipe("left")}
+                className="flex items-center gap-2 px-6 py-2"
+              >
+                👎 Left
+              </Button>
+              <Button
+                onClick={() => handleSwipe("right")}
+                className="flex items-center gap-2 px-6 py-2 bg-green-600 hover:bg-green-700"
+              >
+                👍 Right
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={goToProfile}
+                className="px-6 py-2"
+              >
+                Profile
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={handleLogout}
+                className="px-6 py-2"
+              >
+                Logout
+              </Button>
+            </div>
           </div>
         </main>
       </SidebarInset>
     </SidebarProvider>
   );
 }
-

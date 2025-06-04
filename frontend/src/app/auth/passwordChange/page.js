@@ -7,6 +7,7 @@ import { z } from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
+import DoubleRingSpinner from "@/app/components/DoubleRingSpinner";
 import {
     Form,
     FormField,
@@ -18,10 +19,10 @@ import {
   } from "@/components/ui/form"
  
   const formSchema = z.object({
-    "password": z.string().min(6, {message: "Password must be at least 6 characters long."}),
-    "confirmPassword": z.string().min(6, {message: "Confirm Password is required."})
+    "newPassword": z.string().min(6, {message: "Password must be at least 6 characters long."}),
+    "confirmedPassword": z.string().min(6, {message: "Confirm Password is required."})
 })
-.refine((data) => data.password === data.confirmPassword, {
+.refine((data) => data.newPassword === data.confirmedPassword, {
     message: "Passwords must match.",
     path: ["confirmPassword"]
 });
@@ -29,6 +30,7 @@ import {
 export default function passwordChangePage() {
 
     const router = useRouter();
+    const [loading, setLoading] = useState(false)
     const params = useSearchParams();
     const token = params.get("token");
     const [response, setResponse] = useState('');
@@ -36,18 +38,20 @@ export default function passwordChangePage() {
     const form = useForm({
         resolver: zodResolver(formSchema),
         defaultValues: {
-            password: "",
-            confirmPassword: ""
+            newPassword: "",
+            confirmedPassword: ""
         }
     });
 
     const renderLabel = (label) => {
 
-        return (label === "confirmPassword") ? "Confirm Password" : "Password"
+        return (label === "confirmedPassword") ? "Confirm Password" : "Password"
     }
 
     const onSubmit = async (data, e) => {
         e.preventDefault();
+        setLoading(true)
+        console.log("sending to backend... ", data)
         try {
             const res = await fetch(`http://localhost:8080/auth/passwordChange?token=${token}`, {
                 method: "POST",
@@ -70,14 +74,20 @@ export default function passwordChangePage() {
         catch(error) {
             form.error("root", {message: "Something went wrong. Try again."});
         }    
+        finally {
+          setLoading(false);
+        }
     }
 
     return (
     <div className="max-w-md mx-auto mt-12">
       <h1 className="text-2xl font-bold mb-6">Create New Password</h1>
+      {loading ? (
+            <DoubleRingSpinner />
+          ) : (
         <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          {["password", "confirmPassword"].map((fieldName) => (
+          {["newPassword", "confirmedPassword"].map((fieldName) => (
             <FormField
               key={fieldName}
               control={form.control}
@@ -106,9 +116,9 @@ export default function passwordChangePage() {
             Register
           </Button>
         </form>
-        
       </Form>
-        {response && <p >{response}</p>}
+    )}
+        {response && <p>{response}</p>}
         </div>
     )
 }

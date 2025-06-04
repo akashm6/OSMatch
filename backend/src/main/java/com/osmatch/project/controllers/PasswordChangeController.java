@@ -104,7 +104,6 @@ public class PasswordChangeController {
                 }
 
                 String email = passResetToken.getEmail();
-                System.out.print("THIS IS THE USERS EMAIL: " + email);
                 UserEntity user = userRepo.findByEmail(email);
                 if (user == null) {
 

@@ -35,12 +35,10 @@ export default function ProfilePage() {
         });
 
         if (!res.ok) {
-           console.log(res.json())
            console.log(res)
           router.push("/");
           return;
         }
-
         const data = await res.json();
         setUserId(data.userId);
         setUsername(data.username);
@@ -58,7 +56,6 @@ export default function ProfilePage() {
         `http://localhost:8080/profile/likedProjects?userId=${id}`
       );
       const data = await res.json();
-      console.log(data)
       setLikedProjects(data);
     } catch (err) {
       console.error("Error fetching liked projects:", err);

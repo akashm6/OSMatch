@@ -20,6 +20,7 @@ import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Info } from "lucide-react";
+import DoubleRingSpinner from "../components/DoubleRingSpinner";
 
 export default function Home() {
   const router = useRouter();
@@ -55,18 +56,27 @@ export default function Home() {
         const data = await res.json();
         setUserId(data.userId);
 
-        setUserStats({
-          totalSwipes: data.totalSwipes,
-          totalMatches: data.totalMatches,
-        });
-
-        handleLanguageChange(savedLang);
+        const cachedStats = localStorage.getItem("userStats");
+        if(cachedStats) {
+          setUserStats(JSON.parse(cachedStats));
+        }
+        else {
+          const statsFromBackend = {
+            totalSwipes: data.totalSwipes,
+            totalMatches: data.totalMatches,
+          };
+          setUserStats(statsFromBackend);
+          localStorage.setItem("userStats", JSON.stringify(statsFromBackend));
+        }
+        
+        handleLanguageChange(savedLang, data.userId);
       } catch (error) {
         console.error(error);
       }
     };
 
     validateTokenAndStats();
+    
   }, [router]);
 
   useEffect(() => {
@@ -92,15 +102,18 @@ export default function Home() {
     checkExhaustion();
   }, [currentUserId, selectedLanguage]);
 
-  const handleLanguageChange = async (lang) => {
+  const handleLanguageChange = async (lang, userIdOverride = null) => {
+    const userId = userIdOverride || currentUserId;
     setSelectedLanguage(lang);
     localStorage.setItem("selectedLanguage", lang);
-    if (currentUserId) {
+    if (userId) {
       try {
-        await fetchRecommendations(currentUserId, lang);
+        await fetchRecommendations(userId, lang);
       } catch (error) {
         console.error("Error fetching for new language:", error);
       }
+    } else {
+      console.warn("User ID not available yet");
     }
   };
 
@@ -157,11 +170,15 @@ export default function Home() {
 
     setIsSwiping(true);
 
-    setUserStats((prev) => ({
-      totalSwipes: prev.totalSwipes + 1,
-      totalMatches:
-        direction === "right" ? prev.totalMatches + 1 : prev.totalMatches,
-    }));
+    setUserStats((prev) => {
+      const updated = {
+        totalSwipes: prev.totalSwipes + 1,
+        totalMatches:
+          direction === "right" ? prev.totalMatches + 1 : prev.totalMatches,
+        };
+        localStorage.setItem("userStats", JSON.stringify(updated));
+        return updated;
+    });
 
     const project = projects[currentProjectIndex];
     const payload = {
@@ -301,9 +318,7 @@ export default function Home() {
             </CardHeader>
             <CardContent className="flex-1 overflow-auto">
               {isLoading ? (
-                <div className="text-center text-gray-400 dark:text-gray-300 py-6">
-                  ⏳ Loading your personalized projects...
-                </div>
+                <DoubleRingSpinner />
               ) : noMoreProjects ? (
                 <div className="text-center text-gray-400 dark:text-gray-300 py-6">
                   🎉 You've swiped through all available projects in this

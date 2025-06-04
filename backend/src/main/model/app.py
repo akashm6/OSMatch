@@ -1,7 +1,9 @@
+from fastapi.responses import JSONResponse
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException
+from collections import Counter
 from pydantic import BaseModel
 import pymysql
 from dotenv import load_dotenv
@@ -72,9 +74,10 @@ class ResetRequest(BaseModel):
 # reset the user's swipe history and wipe their Redis cache
 @app.post("/reset/")
 async def reset_model(reset: ResetRequest):
-    # delete the swipes for this userid
     redis_client.delete(f"user:{reset.user_id}:swipes")
-    # set the new language for the userid
+    redis_client.delete(f"user:{reset.user_id}:seen_urls")
+    redis_client.delete(f"user:{reset.user_id}:right_swipe_count")
+    redis_client.delete(f"user:{reset.user_id}:top_interest")
     redis_client.set(f"user:{reset.user_id}:language", reset.language)
     return {"message": f"Model reset for language {reset.language}"}
 
@@ -100,36 +103,109 @@ class SwipeRequest(BaseModel):
     project: Project
     direction: str
 
+def extract_top_interest(swipes):
+    topic_freq = {}
+    for entry in swipes:
+        try:
+            obj = json.loads(entry)
+            if obj.get("direction") == "right":
+                project = obj["project"]
+                topics = project.get("topics", [])
+                for tag in topics:
+                        topic_freq[tag] = topic_freq.get(tag, 0) + 1
+        except:
+            continue
+    if not topic_freq:
+        return ["N/A"]
+    sorted_topics = sorted(topic_freq.items(), key=lambda x: x[1], reverse=True)
+    print(sorted_topics)
+    return [t[0] for t in sorted_topics[:3]]
+
+@app.get("/exhaustion/")
+async def get_exhaustion(user_id: int, language: str):
+    normalized_lang = language.lower()
+    exhausted = redis_client.get(f"user:{user_id}:exhausted:{normalized_lang}")
+    return {"exhausted": exhausted == "true"}
+
 # Appends a swipe to the Redis cache
 @app.post("/swipe/")
-async def record_swipe(swipe: SwipeRequest):
-    if swipe.direction not in ["left", "right"]:
-        raise HTTPException(status_code=400, detail="Invalid swipe direction")
+async def swipe(payload: dict):
+    user_id = payload.get("user_id")
+    project = payload.get("project")
+    direction = payload.get("direction")
+    url = project.get("url")
 
-    # Prevent duplicate swipes
-    if redis_client.sismember(f"user:{swipe.user_id}:seen_urls", swipe.project.url):
-        raise HTTPException(status_code=409, detail="Project already swiped")
+    if not user_id or not project or not direction or not url:
+        raise HTTPException(status_code=400, detail="Missing data")
 
-    redis_client.sadd(f"user:{swipe.user_id}:seen_urls", swipe.project.url)
+    swipe_key = f"user:{user_id}:swipes"
+    right_set = f"user:{user_id}:right_swiped_urls"
+    seen_set = f"user:{user_id}:seen_urls"
 
-    curr_len = redis_client.llen(f"user:{swipe.user_id}:swipes")
-    new_len = redis_client.rpush(
-        f"user:{swipe.user_id}:swipes",
-        json.dumps({"direction": swipe.direction, "project": swipe.project.dict()})
-    )
+    if redis_client.sismember(right_set, url):
+        return JSONResponse(status_code=409, content={"message": "Already liked this project"})
 
-    if curr_len == new_len:
-        raise Exception("Swipe not recorded properly.")
+    redis_client.sadd(seen_set, url)
 
-    return {"message": "Swipe recorded"}
+    if direction == "right":
+        redis_client.sadd(right_set, url)
+
+        old_swipes = redis_client.lrange(swipe_key, 0, -1)
+        cleaned = []
+        for s in old_swipes:
+            try:
+                swipe_obj = json.loads(s)
+                if swipe_obj["project"].get("url") != url:
+                    cleaned.append(s)
+            except:
+                cleaned.append(s)
+        redis_client.delete(swipe_key)
+        for entry in cleaned:
+            redis_client.rpush(swipe_key, entry)
+
+        redis_client.rpush(swipe_key, json.dumps({
+            "direction": direction,
+            "project": project,
+            "timestamp": time.time()
+        }))
+
+        print(f"[swipe] Removed any left-swipe for: {url}")
+
+    elif direction == "left":
+        already_left = False
+        existing = redis_client.lrange(swipe_key, 0, -1)
+        for s in existing:
+            try:
+                obj = json.loads(s)
+                if obj["project"].get("url") == url and obj["direction"] == "left":
+                    already_left = True
+                    break
+            except:
+                continue
+
+        if not already_left:
+            redis_client.rpush(swipe_key, json.dumps({
+                "direction": direction,
+                "project": project,
+                "timestamp": time.time()
+            }))
+
+    right_count = redis_client.scard(right_set)
+    retrain_triggered = False
+    if right_count % 25 == 0:
+        train_model(user_id)
+        retrain_triggered = True
+
+    return {"message": "Swipe recorded", "model_trained": retrain_triggered}
 
 def fetch_projects_from_db(language: str, seen_urls: set, limit: int = 300):
     check_db_conn()
     cursor = db_conn.cursor()
     cursor.execute(
-        "SELECT * FROM github_issues WHERE primary_language = %s ORDER BY updated_at DESC LIMIT %s",
-        (language, limit)
-    )
+    "SELECT * FROM github_issues WHERE LOWER(primary_language) = LOWER(%s) ORDER BY updated_at DESC LIMIT %s",
+    (language, limit)
+)
+
     rows = cursor.fetchall()
     cursor.close()
 
@@ -171,7 +247,7 @@ def train_model(user_id: int):
             right_swipes.append(obj["project"])
     if len(right_swipes) < 25:
         print(f"[ML] Not enough right‐swipes ({len(right_swipes)}) to train.")
-        return [], 0
+        return [], "N/A"
 
     records = []
     directions = []
@@ -205,7 +281,8 @@ def train_model(user_id: int):
     candidates = fetch_projects_from_db(lang, seen_urls=set(seen), limit=1000)
 
     if not candidates:
-        return [], 0
+        print("[ML] No candidates to score — returning empty.")
+        return [], "N/A"
 
     candidate_texts = []
     star_counts = []
@@ -226,41 +303,71 @@ def train_model(user_id: int):
     adjusted = sim_scores * (1 + 0.6 * (star_array / max_star))
 
     # grab the top 10
+    stored_swipes = redis_client.lrange(f"user:{user_id}:swipes", 0, -1)
     sorted_idx = adjusted.argsort()[::-1]
     top10 = [candidates[i] for i in sorted_idx[:10]]
-    filtered_count = len(candidates) - len(top10)
-    return top10, filtered_count
+    topinterests = extract_top_interest(stored_swipes)
+    redis_client.set(f"user:{user_id}:top_interest", json.dumps(topinterests)) 
+    print("[ML] Returning trained recommendations!")
+
+    return top10, topinterests
 
 @app.get("/recommendations/")
-async def get_recommendations(user_id: int):
-    print(f"=== GET /recommendations/ CALLED FOR USER {user_id}")
-    stored_swipes = redis_client.lrange(f"user:{user_id}:swipes", 0, -1)
-    seen_urls = set()
-    for entry in stored_swipes:
-        entry = entry.strip()
-        if not entry.startswith("{"):
-            continue
-        try:
-            obj = json.loads(entry)
-            seen_urls.add(obj["project"].get("url", ""))
-        except:
-            continue
+async def get_recommendations(user_id: int, language: Optional[str] = None):
+    print(f"=== GET /recommendations/ for user {user_id}, lang: {language}")
 
-    #if we have at least 25 right‐swipes, train
-    if len([e for e in stored_swipes if e.strip().startswith("{") and json.loads(e).get("direction") == "right"]) >= 25:
-        recs, filtered_count = train_model(user_id)
-        if recs:
-            print("[recommendations] returning model‐trained results")
-            return {"recommended_repos": recs, "filtered_count": filtered_count}
-        else:
-            print("[recommendations] not enough high‐quality model data, falling back…")
+    if language:
+        redis_client.set(f"user:{user_id}:language", language)
+    stored_language = redis_client.get(f"user:{user_id}:language") or "python"
+    print(stored_language)
+    normalized_lang = stored_language.lower()
 
-    language = redis_client.get(f"user:{user_id}:language") or "python"
-    projects = fetch_projects_from_db(language, seen_urls=seen_urls, limit=300)
-    if not projects:
-        return {"message": "No projects found. Try swiping more!"}
-    random.shuffle(projects)
-    return {"recommended_repos": projects, "filtered_count": len(seen_urls)}
+    seen_urls = redis_client.smembers(f"user:{user_id}:seen_urls")
+    right_swiped_urls = redis_client.smembers(f"user:{user_id}:right_swiped_urls")
+    all_swipes = redis_client.lrange(f"user:{user_id}:swipes", 0, -1)
+
+    right_swipes = [s for s in all_swipes if s.strip().startswith("{") and json.loads(s).get("direction") == "right"]
+    top_interest = extract_top_interest(all_swipes)
+
+    if len(right_swipes) >= 25:
+        ml_recs, top_interest = train_model(user_id)
+        if ml_recs:
+            print("[ML] Returning model-trained results")
+            redis_client.set(f"user:{user_id}:exhausted:{normalized_lang}", "false")
+            return {"recommended_repos": ml_recs, "top_interest": top_interest}
+
+    projects = fetch_projects_from_db(normalized_lang, seen_urls=set(seen_urls), limit=1000)
+    fallback_candidates = [p for p in projects if p["url"] not in right_swiped_urls]
+
+    if fallback_candidates:
+        print(f"[fallback] Returning {len(fallback_candidates)} unseen projects")
+        redis_client.set(f"user:{user_id}:exhausted:{normalized_lang}", "false")
+        random.shuffle(fallback_candidates)
+        return {"recommended_repos": fallback_candidates[:10], "top_interest": top_interest}
+
+    left_swipes = []
+    for s in all_swipes:
+        if s.strip().startswith("{"):
+            obj = json.loads(s)
+            if obj.get("direction") == "left":
+                proj = obj.get("project", {})
+                if proj.get("primaryLanguage", "").lower() == normalized_lang:
+                    if proj.get("url") not in right_swiped_urls:
+                        left_swipes.append(proj)
+
+    if left_swipes:
+        print(f"[left-swipe fallback] Returning {len(left_swipes)} left-swiped")
+        redis_client.set(f"user:{user_id}:exhausted:{normalized_lang}", "false")
+        random.shuffle(left_swipes)
+        return {"recommended_repos": left_swipes[:10], "top_interest": top_interest}
+
+    print(f"[exhausted] Nothing left — setting exhausted:{normalized_lang}")
+    redis_client.set(f"user:{user_id}:exhausted:{normalized_lang}", "true")
+    return {
+        "message": "You've swiped through everything for this language. Come back later!",
+        "recommended_repos": [],
+        "top_interest": top_interest
+    }
 
 # debug stuff
 @app.get("/debug/swipes/")

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import DoubleRingSpinner from "../components/DoubleRingSpinner";
 import {
   Accordion,
   AccordionContent,
@@ -42,7 +43,7 @@ export default function ProfilePage() {
         const data = await res.json();
         setUserId(data.userId);
         setUsername(data.username);
-        fetchLikedProjects(data.userId);
+        await fetchLikedProjects(data.userId);
       } catch (error) {
         console.error(error);
       }
@@ -73,7 +74,10 @@ export default function ProfilePage() {
     <div className="p-6 dark:bg-background">
       <h1 className="text-3xl font-bold mb-6 text-foreground">{username}'s Liked Projects</h1>
       {Object.keys(groupedByLanguage).length === 0 ? (
-        <p className="text-muted-foreground">No liked projects yet.</p>
+        <div>
+        <DoubleRingSpinner /> 
+        <p className="text-lg font-semibold text-foreground m-auto">Loading Liked Projects...</p>
+        </div>
       ) : (
         <Accordion type="multiple" className="w-full">
           {Object.entries(groupedByLanguage).map(([language, projects]) => (

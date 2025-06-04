@@ -95,7 +95,6 @@ export default function Home() {
   const handleLanguageChange = async (lang) => {
     setSelectedLanguage(lang);
     localStorage.setItem("selectedLanguage", lang);
-
     if (currentUserId) {
       try {
         await fetchRecommendations(currentUserId, lang);
@@ -285,8 +284,7 @@ export default function Home() {
             <Card className="bg-muted/10 border border-indigo-700 shadow-inner">
               <CardHeader>
                 <CardTitle className="text-sm text-indigo-300 flex items-center gap-1">
-                  <Info className="w-4 h-4 text-indigo-400" />
-                  Top Interest
+                  Top Interests
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -334,13 +332,13 @@ export default function Home() {
                 onClick={() => handleSwipe("left")}
                 className="flex items-center gap-2 px-6 py-2"
               >
-                👎 Left
+                &larr; Left
               </Button>
               <Button
                 onClick={() => handleSwipe("right")}
                 className="flex items-center gap-2 px-6 py-2 bg-green-600 hover:bg-green-700"
               >
-                👍 Right
+                &rarr; Right
               </Button>
               <Button
                 variant="secondary"

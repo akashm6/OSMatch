@@ -21,14 +21,13 @@ const languages = [
   { name: "Swift", url: "/lang/go" },
   { name: "Kotlin", url: "/lang/go" },
   { name: "Ruby", url: "/lang/go" },
-  { name: "SQL", url: "/lang/go" },
   { name: "R", url: "/lang/go" },
   { name: "PHP", url: "/lang/c" },
-  { name: "Perl", url: "/lang/c" },
   { name: "Dart", url: "/lang/c" },
   { name: "Scala", url: "/lang/c" },
   { name: "Lua", url: "/lang/c" },
   { name: "Shell", url: "/lang/c" },
+  { name: "Perl", url: "/lang/c" },
 ];
 
 export function AppSidebar({ selectedLanguage, onSelectLanguage }) {

@@ -57,7 +57,7 @@ export default function Home() {
         });
 
         if (!res.ok) {
-          router.push("/");
+          handleLogout();
           return;
         }
 

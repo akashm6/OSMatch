@@ -113,6 +113,7 @@ def extract_top_interest(swipes):
                 topics = project.get("topics", [])
                 labels = project.get("labels", [])
                 for tag in topics + labels:
+                    tag = tag.lower()
                     if tag not in LANGUAGE_KEYWORDS and tag not in ["enhancement", "good first issue", "help wanted", "bug", "documentation"] and len(tag) > 1:
                         topic_freq[tag] = topic_freq.get(tag, 0) + 1
         except:

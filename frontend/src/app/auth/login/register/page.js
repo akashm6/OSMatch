@@ -50,7 +50,7 @@ export default function RegisterPage() {
 
   const onSubmit = async (values) => {
     try {
-      const res = await fetch("http://localhost:8080/auth/register", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SPRINGBOOT_API}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),

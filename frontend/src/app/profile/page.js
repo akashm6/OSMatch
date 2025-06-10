@@ -31,7 +31,7 @@ export default function ProfilePage() {
     const token = localStorage.getItem("token");
     const validateToken = async () => {
       try {
-        const res = await fetch("http://localhost:8080/protected/jwt", {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_SPRINGBOOT_API}/protected/jwt`, {
           method: "GET",
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -53,7 +53,7 @@ export default function ProfilePage() {
 
   const fetchLikedProjects = async (id) => {
     try {
-      const res = await fetch(`http://localhost:8080/profile/likedProjects?userId=${id}`);
+      const res = await fetch(`${process.env.NEXT_PUBLIC_SPRINGBOOT_API}/profile/likedProjects?userId=${id}`);
       const data = await res.json();
       setLikedProjects(data);
     } catch (err) {
@@ -71,25 +71,32 @@ export default function ProfilePage() {
     }
     return [...projects].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   };
-  
 
   const groupedByLanguage = likedProjects.reduce((acc, project) => {
-    const lang = project.primaryLanguage || "Unknown";
-    if (!acc[lang]) acc[lang] = [];
-    acc[lang].push(project);
+    const rawLang = project.primaryLanguage || "Unknown";
+    const normKey = rawLang.trim().toLowerCase();
+    const displayName = normKey.charAt(0).toUpperCase() + normKey.slice(1);
+
+    if (!acc[normKey]) {
+      acc[normKey] = {
+        displayName,
+        projects: []
+      };
+    }
+    acc[normKey].projects.push(project);
     return acc;
   }, {});
 
   return (
     <div className="p-6 dark:bg-background min-h-screen">
       <div className="flex items-center justify-between mb-6 max-w-6xl mx-auto">
-  <h1 className="text-3xl font-bold text-foreground">
-    {username}'s Liked Projects
-  </h1>
-  <Button onClick={() => router.push("/home")} className="bg-muted text-foreground hover:bg-muted/70">
-    Go Back
-  </Button>
-</div>
+        <h1 className="text-3xl font-bold text-foreground">
+          {username}&apos;s Liked Projects
+        </h1>
+        <Button onClick={() => router.push("/home")} className="bg-muted text-foreground hover:bg-muted/70">
+          Go Back
+        </Button>
+      </div>
 
       {Object.keys(groupedByLanguage).length === 0 ? (
         <div className="flex flex-col items-center justify-center mt-10 gap-4">
@@ -111,12 +118,12 @@ export default function ProfilePage() {
           </div>
 
           <Accordion type="multiple" className="w-full max-w-6xl mx-auto">
-            {Object.entries(groupedByLanguage).map(([language, projects]) => {
+            {Object.entries(groupedByLanguage).map(([_, { displayName, projects }]) => {
               const sortedProjects = sortProjects(projects);
               return (
-                <AccordionItem value={language} key={language}>
+                <AccordionItem value={displayName} key={displayName}>
                   <AccordionTrigger className="text-lg font-semibold text-foreground">
-                    {language} ({projects.length})
+                    {displayName} ({projects.length})
                   </AccordionTrigger>
                   <AccordionContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {sortedProjects.map((project, idx) => (

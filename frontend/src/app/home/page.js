@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import ProjectCard from "../components/ProjectCard";
 import {
@@ -13,22 +13,32 @@ import {
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { 
-  AlertDialog, 
-  AlertDialogTrigger, 
-  AlertDialogContent, AlertDialogHeader, 
-  AlertDialogTitle, 
-  AlertDialogDescription, 
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
   AlertDialogFooter,
-  AlertDialogAction
+  AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 import DoubleRingSpinner from "../components/DoubleRingSpinner";
+
+function useDebounce(fn, delay) {
+  const timeoutRef = useRef(null);
+  return (...args) => {
+    if (timeoutRef.current) return; 
+    fn(...args);
+    timeoutRef.current = setTimeout(() => {
+      timeoutRef.current = null;
+    }, delay);
+  };
+}
 
 export default function Home() {
   const router = useRouter();
@@ -39,76 +49,8 @@ export default function Home() {
   const [isSwiping, setIsSwiping] = useState(false);
   const [currentProjectIndex, setCurrentProjectIndex] = useState(0);
   const [selectedLanguage, setSelectedLanguage] = useState("");
-  const [userStats, setUserStats] = useState({
-    totalSwipes: 0,
-    totalMatches: 0,
-  });
+  const [userStats, setUserStats] = useState({ totalSwipes: 0, totalMatches: 0 });
   const [topInterest, setTopInterest] = useState([]);
-
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    const savedLang = localStorage.getItem("selectedLanguage") || "python";
-
-    const validateTokenAndStats = async () => {
-      try {
-        const res = await fetch("http://localhost:8080/protected/jwt", {
-          method: "GET",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!res.ok) {
-          handleLogout();
-          return;
-        }
-
-        const data = await res.json();
-        setUserId(data.userId);
-
-        const cachedStats = localStorage.getItem("userStats");
-        if(cachedStats) {
-          setUserStats(JSON.parse(cachedStats));
-        }
-        else {
-          const statsFromBackend = {
-            totalSwipes: data.totalSwipes,
-            totalMatches: data.totalMatches,
-          };
-          setUserStats(statsFromBackend);
-          localStorage.setItem("userStats", JSON.stringify(statsFromBackend));
-        }
-        
-        handleLanguageChange(savedLang, data.userId);
-      } catch (error) {
-        console.error(error);
-      }
-    };
-
-    validateTokenAndStats();
-    
-  }, [router]);
-
-  useEffect(() => {
-    console.log("📌 topInterest updated:", topInterest);
-  }, [topInterest]);
-
-  useEffect(() => {
-    const checkExhaustion = async () => {
-      if (!currentUserId || !selectedLanguage) return;
-      try {
-        const res = await fetch(
-          `http://localhost:8000/exhaustion/?user_id=${currentUserId}&language=${encodeURIComponent(
-            selectedLanguage
-          )}`
-        );
-        const data = await res.json();
-        setNoMoreProjects(data.exhausted); 
-      } catch (err) {
-        console.error("Error checking exhaustion:", err);
-      }
-    };
-
-    checkExhaustion();
-  }, [currentUserId, selectedLanguage]);
 
   const handleLanguageChange = async (lang, userIdOverride = null) => {
     const userId = userIdOverride || currentUserId;
@@ -120,25 +62,33 @@ export default function Home() {
       } catch (error) {
         console.error("Error fetching for new language:", error);
       }
-    } else {
-      console.warn("User ID not available yet");
     }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_SPRINGBOOT_API}/updateStats`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...userStats, userId: Number(currentUserId) }),
+      });
+    } catch (error) {
+      console.error(error);
+    }
+    localStorage.clear();
+    router.push("/");
   };
 
   const fetchRecommendations = async (id, lang) => {
     setIsLoading(true);
-    setNoMoreProjects(false); 
-
+    setNoMoreProjects(false);
     try {
       const res = await fetch(
-        `http://localhost:8000/recommendations/?user_id=${id}&language=${encodeURIComponent(
-          lang
-        )}`
+        `${process.env.NEXT_PUBLIC_ML_API}/recommendations/?user_id=${id}&language=${encodeURIComponent(lang)}`
       );
       const data = await res.json();
-      console.log("Fetched recommendations:", data);
 
-      if (data.message && data.message.includes("Come back later")) {
+      if (data.message?.includes("Come back later")) {
         localStorage.setItem(`exhausted:${lang}`, "true");
         setProjects([]);
         setNoMoreProjects(true);
@@ -150,16 +100,14 @@ export default function Home() {
       if (Array.isArray(data.recommended_repos)) {
         setProjects(data.recommended_repos);
         setCurrentProjectIndex(0);
-
         const normalizedInterest = Array.isArray(data.top_interest)
           ? data.top_interest
           : [data.top_interest || "N/A"];
-
-        setTopInterest((prev) => {
-          const prevStr = JSON.stringify(prev);
-          const newStr = JSON.stringify(normalizedInterest);
-          return prevStr !== newStr ? normalizedInterest : prev;
-        });
+        setTopInterest((prev) =>
+          JSON.stringify(prev) !== JSON.stringify(normalizedInterest)
+            ? normalizedInterest
+            : prev
+        );
       } else {
         setProjects([]);
         setNoMoreProjects(true);
@@ -172,20 +120,17 @@ export default function Home() {
     }
   };
 
-  const handleSwipe = async (direction) => {
-    if (!currentUserId || projects.length === 0 || isSwiping || noMoreProjects)
-      return;
-
+  const swipe = async (direction) => {
+    if (!currentUserId || projects.length === 0 || isSwiping || noMoreProjects) return;
     setIsSwiping(true);
 
     setUserStats((prev) => {
       const updated = {
         totalSwipes: prev.totalSwipes + 1,
-        totalMatches:
-          direction === "right" ? prev.totalMatches + 1 : prev.totalMatches,
-        };
-        localStorage.setItem("userStats", JSON.stringify(updated));
-        return updated;
+        totalMatches: direction === "right" ? prev.totalMatches + 1 : prev.totalMatches,
+      };
+      localStorage.setItem("userStats", JSON.stringify(updated));
+      return updated;
     });
 
     const project = projects[currentProjectIndex];
@@ -196,7 +141,7 @@ export default function Home() {
     };
 
     try {
-      const swipeRes = await fetch("http://localhost:8000/swipe/", {
+      const swipeRes = await fetch(`${process.env.NEXT_PUBLIC_ML_API}/swipe/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -205,7 +150,7 @@ export default function Home() {
       const swipeData = await swipeRes.json();
 
       if (direction === "right") {
-        await fetch("http://localhost:8080/swipeRight/", {
+        await fetch(`${process.env.NEXT_PUBLIC_SPRINGBOOT_API}/swipeRight/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -221,13 +166,10 @@ export default function Home() {
         setCurrentProjectIndex(nextIndex);
       } else {
         setProjects([]);
-      }
-
-      if (swipeData.model_trained) {
         await fetchRecommendations(currentUserId, selectedLanguage);
       }
 
-      if (nextIndex >= projects.length && !swipeData.model_trained) {
+      if (swipeData.model_trained) {
         await fetchRecommendations(currentUserId, selectedLanguage);
       }
     } catch (error) {
@@ -237,34 +179,51 @@ export default function Home() {
     }
   };
 
-  const handleLogout = async () => {
-    const payload = {
-      ...userStats,
-      userId: Number(currentUserId),
-    };
-    try {
-      await fetch("http://localhost:8080/updateStats", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-    } catch (error) {
-      console.error(error);
-    }
-    localStorage.clear();
-    router.push("/");
-  };
+  const debouncedSwipe = useDebounce(swipe, 300);
 
-  const goToProfile = () => {
-    router.push("/profile");
-  };
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    const savedLang = localStorage.getItem("selectedLanguage") || "python";
+
+    const validateTokenAndStats = async () => {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_SPRINGBOOT_API}/protected/jwt`, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!res.ok) {
+          handleLogout();
+          return;
+        }
+
+        const data = await res.json();
+        setUserId(data.userId);
+
+        const cachedStats = localStorage.getItem("userStats");
+        if (cachedStats) {
+          setUserStats(JSON.parse(cachedStats));
+        } else {
+          const stats = {
+            totalSwipes: data.totalSwipes,
+            totalMatches: data.totalMatches,
+          };
+          setUserStats(stats);
+          localStorage.setItem("userStats", JSON.stringify(stats));
+        }
+
+        handleLanguageChange(savedLang, data.userId);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    validateTokenAndStats();
+  }, []);
 
   return (
     <SidebarProvider>
-      <AppSidebar
-        selectedLanguage={selectedLanguage}
-        onSelectLanguage={handleLanguageChange}
-      />
+      <AppSidebar selectedLanguage={selectedLanguage} onSelectLanguage={handleLanguageChange} />
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4 dark:border-neutral-800">
           <SidebarTrigger className="-ml-1" />
@@ -280,55 +239,28 @@ export default function Home() {
 
         <main className="flex flex-1 flex-col gap-4 p-4 dark:bg-background">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
-            <Card className="bg-gradient-to-br from-green-900/60 to-green-700/30 border border-green-500 shadow-[0_0_20px_#16a34a]/40 text-white">
-              <CardHeader>
-                <CardTitle className="text-sm text-green-200">
-                  Total Matches
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold">{userStats.totalMatches}</p>
-              </CardContent>
+            <Card className="bg-green-900/60 text-white border border-green-500">
+              <CardHeader><CardTitle className="text-sm">Total Matches</CardTitle></CardHeader>
+              <CardContent><p className="text-3xl font-bold">{userStats.totalMatches}</p></CardContent>
             </Card>
-
-            <Card className="bg-gradient-to-br from-red-900/60 to-red-700/30 border border-red-500 shadow-[0_0_20px_#dc2626]/40 text-white">
-              <CardHeader>
-                <CardTitle className="text-sm text-red-200">
-                  Total Swipes
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold">{userStats.totalSwipes}</p>
-              </CardContent>
+            <Card className="bg-red-900/60 text-white border border-red-500">
+              <CardHeader><CardTitle className="text-sm">Total Swipes</CardTitle></CardHeader>
+              <CardContent><p className="text-3xl font-bold">{userStats.totalSwipes}</p></CardContent>
             </Card>
-
-            <Card className="bg-muted/10 border border-indigo-700 shadow-inner">
-              <CardHeader>
-                <CardTitle className="text-sm text-indigo-300 flex items-center gap-1">
-                  Top Interests
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {Array.isArray(topInterest)
-                  ? topInterest.join(", ")
-                  : topInterest}
-              </CardContent>
+            <Card className="bg-muted/10 border border-indigo-700">
+              <CardHeader><CardTitle className="text-sm">Top Interests</CardTitle></CardHeader>
+              <CardContent>{topInterest.join(", ")}</CardContent>
             </Card>
           </div>
 
           <Card className="flex flex-col max-h-[60vh] overflow-hidden">
-            <CardHeader>
-              <CardTitle>Swipe Project</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle>Swipe Project</CardTitle></CardHeader>
             <CardContent className="flex-1 overflow-auto">
               {isLoading ? (
                 <DoubleRingSpinner />
               ) : noMoreProjects ? (
-                <div className="text-center text-gray-400 dark:text-gray-300 py-6">
-                  🎉 You've swiped through all available projects in this
-                  language!
-                  <br />
-                  Check back tomorrow for new issues or switch languages.
+                <div className="text-center text-gray-400 py-6">
+                  🎉 You&apos;ve swiped through all available projects!
                 </div>
               ) : (
                 <div className="min-h-[40vh] max-h-[50vh] overflow-y-auto">
@@ -345,8 +277,8 @@ export default function Home() {
           )}
 
           <div className="sticky bottom-4 z-10 flex justify-center">
-            <div className="bg-muted/10 border border-border px-6 py-4 rounded-xl flex flex-wrap gap-4 shadow-lg backdrop-blur-md">
-            <AlertDialog>
+            <div className="bg-muted/10 border px-6 py-4 rounded-xl flex flex-wrap gap-4 shadow-lg backdrop-blur-md">
+              <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="outline" className="px-6 py-2">Help</Button>
                 </AlertDialogTrigger>
@@ -354,10 +286,9 @@ export default function Home() {
                   <AlertDialogHeader>
                     <AlertDialogTitle>How does this work?</AlertDialogTitle>
                     <AlertDialogDescription>
-                        <strong>Left Swipe:</strong> Left swipes skip the project. You can see it again later.<br />
-                        <strong>Right Swipe:</strong> Interested? Right swipes save projects to your profile.
-                      </AlertDialogDescription>
-
+                      <strong>Left Swipe:</strong> Skip this project.<br />
+                      <strong>Right Swipe:</strong> Save it to your profile.
+                    </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogAction>Got it</AlertDialogAction>
@@ -365,31 +296,16 @@ export default function Home() {
                 </AlertDialogContent>
               </AlertDialog>
 
-              <Button
-                variant="destructive"
-                onClick={() => handleSwipe("left")}
-                className="flex items-center gap-2 px-6 py-2"
-              >
+              <Button variant="destructive" onClick={() => debouncedSwipe("left")} className="px-6 py-2">
                 &larr; Left
               </Button>
-              <Button
-                onClick={() => handleSwipe("right")}
-                className="flex items-center gap-2 px-6 py-2 bg-green-600 hover:bg-green-700"
-              >
+              <Button onClick={() => debouncedSwipe("right")} className="bg-green-600 hover:bg-green-700 px-6 py-2">
                 &rarr; Right
               </Button>
-              <Button
-                variant="secondary"
-                onClick={goToProfile}
-                className="px-6 py-2"
-              >
+              <Button variant="secondary" onClick={() => router.push("/profile")} className="px-6 py-2">
                 Profile
               </Button>
-              <Button
-                variant="ghost"
-                onClick={handleLogout}
-                className="px-6 py-2"
-              >
+              <Button variant="ghost" onClick={handleLogout} className="px-6 py-2">
                 Logout
               </Button>
             </div>

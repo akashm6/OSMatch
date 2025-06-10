@@ -35,7 +35,7 @@ export function LoginForm({
       e.preventDefault();
       console.log("Submitting: ", formData);
       try {
-          const response = await fetch("http://localhost:8080/auth/login", {
+          const response = await fetch(`${process.env.NEXT_PUBLIC_SPRINGBOOT_API}/auth/login`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(formData),
@@ -84,7 +84,7 @@ export function LoginForm({
                 <div className="flex items-center">
                   <Label htmlFor="password">Password</Label>
                   <a
-                    href="http://localhost:3000/auth/passwordChangeInput"
+                    href="https://osmatch.vercel.app/auth/passwordChangeInput"
                     className="ml-auto inline-block text-sm underline-offset-4 hover:underline"
                   >
                     Forgot your password?
@@ -102,7 +102,7 @@ export function LoginForm({
               <Button type="submit" className="w-full">
                 Login
               </Button>
-              <Button variant="outline" className="w-full" onClick = {() => router.push("http://localhost:8080/oauth2/authorization/google")}>
+              <Button variant="outline" className="w-full" onClick = {() => router.push(`${process.env.NEXT_PUBLIC_SPRINGBOOT_API}/oauth2/authorization/google`)}>
                 Login with Google
               </Button>
             </div>

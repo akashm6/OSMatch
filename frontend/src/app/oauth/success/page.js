@@ -1,26 +1,32 @@
-'use client'
-import { useSearchParams } from "next/navigation";
-import { useRouter } from "next/navigation";
-import React, { useEffect } from "react";
+'use client';
+
+import { Suspense } from "react";
 
 export default function OAuthSuccessPage() {
-    const router = useRouter();
-    const params = useSearchParams();
+  return (
+    <Suspense fallback={<p>Logging in...</p>}>
+      <OAuthRedirectHandler />
+    </Suspense>
+  );
+}
 
-    useEffect(() => {
+import { useSearchParams, useRouter } from "next/navigation";
+import { useEffect } from "react";
 
-        const token = params.get("token");
-        const userId = params.get("userId");
-        if(token) {
-            localStorage.setItem("token", token);
-            localStorage.setItem("userId", userId);
-            router.push("/home");
-        }
-    }, []);
+function OAuthRedirectHandler() {
+  const router = useRouter();
+  const params = useSearchParams();
 
-    console.log(params);
+  useEffect(() => {
+    const token = params.get("token");
+    const userId = params.get("userId");
 
-    return <p>Logging in...</p>;
-    
-    
+    if (token) {
+      localStorage.setItem("token", token);
+      localStorage.setItem("userId", userId);
+      router.push("/home");
+    }
+  }, [params, router]);
+
+  return <p>Logging in...</p>;
 }

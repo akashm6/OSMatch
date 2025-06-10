@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import DoubleRingSpinner from "@/app/components/DoubleRingSpinner";
 
-export default function passwordChangeInputPage() {
+export default function PasswordChangeInputPage() {
 
    const [loading, setLoading] = useState(false);
     const emailSchema = z.object({
@@ -36,7 +36,7 @@ export default function passwordChangeInputPage() {
     const onSubmit = async (data) => {
       setLoading(true);
         try {
-          const res = await fetch(`http://localhost:8080/auth/sendEmail`, {
+          const res = await fetch(`${process.env.NEXT_PUBLIC_SPRINGBOOT_API}/auth/sendEmail`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: data.email,

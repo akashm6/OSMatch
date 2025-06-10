@@ -48,7 +48,8 @@ public class OAuthSuccessHandler implements AuthenticationSuccessHandler {
 
         String token = utility.generateToken(existingUser.getId().toString());
 
-        response.sendRedirect("http://localhost:3000/oauth/success?token=" + token + "&userId=" + existingUser.getId());
+        response.sendRedirect(
+                "https://osmatch.vercel.app/oauth/success?token=" + token + "&userId=" + existingUser.getId());
 
     }
 

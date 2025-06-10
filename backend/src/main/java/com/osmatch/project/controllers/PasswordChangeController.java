@@ -60,7 +60,7 @@ public class PasswordChangeController {
                 passResetToken.setUsed(false);
                 passRepo.save(passResetToken);
 
-                String redirecturl = "http://localhost:3000/auth/passwordChange?token=" + token;
+                String redirecturl = "https://osmatch.vercel.app/auth/passwordChange?token=" + token;
                 String text = "Forgot your password? No problem. Use this link to reset it!\n\n" + redirecturl
                                 + "\n\nThis link will expire in 15 minutes.";
 

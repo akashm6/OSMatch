@@ -43,6 +43,7 @@ def get_date_ranges():
         current = next_date
     return ranges
 
+# paginates based on date of issue creation
 def get_query(language, date_range, cursor=None):
     after = f', after: "{cursor}"' if cursor else ""
     return f"""

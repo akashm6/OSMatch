@@ -6,6 +6,7 @@ import lombok.*;
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
+
 // SwipeDto for providing data for persisting swipes to DB
 public class SwipeDto {
 

@@ -1,19 +1,16 @@
-from fastapi.responses import JSONResponse
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi import FastAPI, HTTPException
-from collections import Counter
 from pydantic import BaseModel
-import pymysql
 from dotenv import load_dotenv
-from datetime import datetime
-import time
 from typing import Optional
 import numpy as np
-import requests
+import pymysql
 import random
 import redis
+import time
 import json
 import os
 
@@ -24,7 +21,10 @@ load_dotenv()
 # allows the frontend on :3000 to send requests back to the backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://osmatch.vercel.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,30 +34,18 @@ GITHUB_API_URL = "https://api.github.com/graphql"
 GITHUB_TOKEN = os.getenv('GITHUB_PERSONAL_ACC_TOKEN')
 REDIS_HOST=os.getenv("REDISHOST")
 REDIS_PORT=os.getenv("REDISPORT")
+REDISPASSWORD=os.getenv("REDISPASSWORD")
 MYSQL_HOST=os.getenv("MYSQLHOST")
 MYSQL_USER=os.getenv("MYSQLUSER")
 MYSQL_PASSWORD=os.getenv("MYSQLPASSWORD")
 MYSQL_DATABASE=os.getenv("MYSQL_DATABASE")
+MYSQLPORT = os.getenv("MYSQLPORT")
 
 # connect to a local Redis instance
-redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+redis_client = redis.Redis(host=REDIS_HOST, port=int(REDIS_PORT), password=REDISPASSWORD, decode_responses=True)
 
 
-LANGUAGE_KEYWORDS = {
-    "python": ["python", "django", "flask", "jupyter-notebook", "numpy", "scikit-learn", "keras", "pytorch", "tensorflow", "pandas", "machine-learning"],
-    "javascript": ["javascript", "node", "react", "next", "vue", "express", "js", "node.js", "react.js", "next.js", "next"],
-    "java": ["java", "spring", "jvm", "junit4", "junit5", "minecraft", "spring-boot", "spring boot", "spring-security", "javafx"],
-    "sql": ["sql", "postgres", "mysql", "sqlite", "supabase", "pgsql", "database", "db", "databases", "gui-sql", "relational"],
-    "go": ["go", "golang"],
-    "rust": ["rust"],
-    "ruby": ["ruby", "rails"],
-    "c++": ["c++", "cpp"],
-    "c": ["c"],
-    "typescript": ["typescript", "ts"],
-    "swift": ["swift", "ios"],
-    "kotlin": ["kotlin", "android"],
-    "unknown": []
-}
+LANGUAGE_KEYWORDS = ["python", "javascript", "java", "sql", "go", "rust", "ruby", "c++", "c", "typescript", "swift", "kotlin", "unknown"]
 
 def check_db_conn():
     global db_conn
@@ -65,11 +53,12 @@ def check_db_conn():
         db_conn.ping(reconnect=True)
     except:
         db_conn = pymysql.connect(
-            host="localhost",
-            user="root",
-            password="",
-            database="restaurantdb",
+            host=MYSQL_HOST,
+            user=MYSQL_USER,
+            password=MYSQL_PASSWORD,
+            database=MYSQL_DATABASE,
             charset="utf8mb4",
+            port=int(MYSQLPORT),
             cursorclass=pymysql.cursors.DictCursor
         )
 
@@ -427,3 +416,28 @@ async def debug_model(user_id: int):
         "similarity_scores": similarity_scores.flatten().tolist()
     }
     return {"model_debug": debug_data}
+
+@app.get("/")
+def test_deploy():
+    return "Python ML deployment working!"
+    
+@app.get("/debug/redis/")
+def test_redis():
+    try:
+        redis_client.set("connection_test", "success")
+        result = redis_client.get("connection_test")
+        return {"redis_status": result}
+    except Exception as e:
+        return {"redis_error": str(e)}
+
+@app.get("/debug/mysql/")
+def test_mysql():
+    try:
+        check_db_conn()
+        cursor = db_conn.cursor()
+        cursor.execute("SELECT COUNT(*) AS total FROM github_issues")
+        result = cursor.fetchone()
+        cursor.close()
+        return {"mysql_status": "connected", "issue_count": result["total"]}
+    except Exception as e:
+        return {"mysql_error": str(e)}

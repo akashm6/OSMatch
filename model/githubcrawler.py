@@ -1,24 +1,32 @@
+from datetime import datetime, timedelta, date
+from dotenv import load_dotenv
 import requests
 import pymysql
-import os
 import json
 import time
-from dotenv import load_dotenv
-from datetime import datetime, timedelta, date
+import os
 
 load_dotenv()
 
 GITHUB_API_URL = "https://api.github.com/graphql"
-GITHUB_TOKEN = os.getenv("GITHUB_PERSONAL_ACC_TOKEN")
+GITHUB_TOKEN = os.getenv('GITHUB_PERSONAL_ACC_TOKEN')
+REDIS_HOST=os.getenv("REDISHOST")
+REDIS_PORT=os.getenv("REDISPORT")
+REDISPASSWORD=os.getenv("REDISPASSWORD")
+MYSQL_HOST=os.getenv("MYSQLHOST")
+MYSQL_USER=os.getenv("MYSQLUSER")
+MYSQL_PASSWORD=os.getenv("MYSQLPASSWORD")
+MYSQL_DATABASE=os.getenv("MYSQL_DATABASE")
+MYSQLPORT = os.getenv("MYSQLPORT")
 HEADERS = {"Authorization": f"Bearer {GITHUB_TOKEN}"}
 
 conn = pymysql.connect(
-    host="localhost",
-    port=3306,
-    user="root",
-    password='',
-    charset='utf8mb4',
-    database="restaurantdb",
+    host=MYSQL_HOST,
+    user=MYSQL_USER,
+    password=MYSQL_PASSWORD,
+    database=MYSQL_DATABASE,
+    charset="utf8mb4",
+    port=int(MYSQLPORT),
     cursorclass=pymysql.cursors.DictCursor
 )
 
